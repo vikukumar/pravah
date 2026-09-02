@@ -34,6 +34,8 @@ class WorkflowCreate(BaseModel):
     description: Optional[str] = None
     nodes: Optional[List[WorkflowNodeSchema]] = Field(default_factory=list)
     edges: Optional[List[WorkflowEdgeSchema]] = Field(default_factory=list)
+    is_active: bool = True
+    status: Optional[str] = "published"
 
 
 class WorkflowUpdate(BaseModel):

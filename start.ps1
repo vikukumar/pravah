@@ -7,7 +7,11 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
-chcp 65001 > $null 2>&1
+if (Get-Command chcp.com -ErrorAction SilentlyContinue) {
+    chcp.com 65001 > $null 2>&1
+} elseif (Test-Path "$env:SystemRoot\System32\chcp.com") {
+    & "$env:SystemRoot\System32\chcp.com" 65001 > $null 2>&1
+}
 
 $env:PYTHONIOENCODING = "utf-8"
 $env:PYTHONUTF8 = "1"

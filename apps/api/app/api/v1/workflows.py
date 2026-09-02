@@ -287,9 +287,9 @@ async def create_workflow(
         created_by_id=tenant.user.id,
         name=payload.name,
         description=payload.description,
-        status="draft",
+        status=payload.status or "published",
         version=1,
-        is_active=False,
+        is_active=payload.is_active,
         graph_data={"nodes": [], "edges": []},
     )
     db.add(workflow)
@@ -694,7 +694,7 @@ async def restore_workflow_version(
 # Execution
 # ============================================================
 
-@router.post("/{workflow_id}/execute")
+@router.post("/{workflow_id}/execute", response_model=WorkflowExecutionResponse)
 async def execute_workflow(
     workflow_id: str,
     payload: WorkflowExecuteRequest,
@@ -702,9 +702,8 @@ async def execute_workflow(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Execute a workflow asynchronously.
-    Returns the execution record immediately (queued state).
-    Use GET /{id}/executions/{exec_id} to poll status.
+    Execute a workflow.
+    Returns the execution record with full node execution statuses.
     """
     engine = WorkflowEngine(db)
     execution = await engine.execute_workflow(
@@ -713,14 +712,19 @@ async def execute_workflow(
         trigger_source=payload.trigger_source or "manual",
         trigger_payload=payload.trigger_payload or {},
         actor=tenant.user,
+        run_sync=True,
     )
-    return {
-        "execution_id": execution.id,
-        "workflow_id": workflow_id,
-        "status": execution.status,
-        "queued_at": execution.queued_at.isoformat() if execution.queued_at else None,
-        "message": "Workflow execution queued. Use the execution ID to track progress.",
-    }
+
+    # Load node executions
+    q = (
+        select(WorkflowExecution)
+        .options(selectinload(WorkflowExecution.node_executions))
+        .where(WorkflowExecution.id == execution.id)
+    )
+    res = await db.execute(q)
+    exec_loaded = res.scalar_one_or_none() or execution
+
+    return _serialize_execution(exec_loaded)
 
 
 @router.get("/{workflow_id}/executions", response_model=List[WorkflowExecutionResponse])

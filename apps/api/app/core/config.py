@@ -56,8 +56,11 @@ class Settings(BaseSettings):
     # First Run Setup Flag
     IS_INITIALIZED: bool = False
     
-    # Default Provider API Keys (Can also be configured via DB SystemSetting)
+    # Default Provider API Keys & Model Defaults
     OPENROUTER_API_KEY: Optional[str] = None
+    DEFAULT_AI_MODEL: str = "anthropic/claude-3.5-sonnet"
+    IMAGE_AI_MODEL: str = "black-forest-labs/flux-1-schnell"
+
     RAZORPAY_KEY_ID: Optional[str] = None
     RAZORPAY_KEY_SECRET: Optional[str] = None
     RAZORPAY_WEBHOOK_SECRET: Optional[str] = None

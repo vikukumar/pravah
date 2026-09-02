@@ -215,18 +215,41 @@ class ProfileIntelligencePipeline:
             )
             existing = existing_q.scalar_one_or_none()
 
+            brand_identity = (
+                summary_data.get("brand", {}).get("description")
+                or f"Official profile for {account.account_name} on {account.provider.capitalize()}"
+            )
+            biz_cat = summary_data.get("business", {}).get("category") or "General Marketing & Brand Presence"
+            desc = summary_data.get("brand", {}).get("description") or f"Automated profile insights for {account.account_name}"
+            tone_str = summary_data.get("tone", {}).get("description", "professional") if isinstance(summary_data.get("tone"), dict) else str(summary_data.get("tone", "professional"))
+
             if existing:
                 existing.summary_data = summary_data
+                existing.brand_identity = brand_identity
+                existing.business_category = biz_cat
+                existing.description = desc
+                existing.tone = tone_str
+                existing.audience_signals = summary_data.get("audience")
+                existing.content_themes = summary_data.get("topics")
+                existing.keywords = summary_data.get("keywords")
+                existing.hashtags = summary_data.get("hashtags")
+                existing.content_formats = summary_data.get("successful_formats")
                 existing.version = (existing.version or 1) + 1
-                existing.analyzed_at = datetime.now(timezone.utc)
                 profile_summary = existing
             else:
                 profile_summary = SocialProfileSummary(
                     social_account_id=account.id,
-                    organisation_id=org_id,
+                    brand_identity=brand_identity,
+                    business_category=biz_cat,
+                    description=desc,
+                    tone=tone_str,
+                    audience_signals=summary_data.get("audience"),
+                    content_themes=summary_data.get("topics"),
+                    keywords=summary_data.get("keywords"),
+                    hashtags=summary_data.get("hashtags"),
+                    content_formats=summary_data.get("successful_formats"),
                     summary_data=summary_data,
                     version=1,
-                    analyzed_at=datetime.now(timezone.utc),
                 )
                 self.db.add(profile_summary)
 

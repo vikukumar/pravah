@@ -117,10 +117,8 @@ class ProviderResolver:
                 select(AIProvider)
                 .where(
                     AIProvider.organisation_id == org_id,
-                    AIProvider.is_active == True,
-                    AIProvider.is_deleted == False,
+                    AIProvider.is_enabled == True,
                 )
-                .order_by(AIProvider.priority.asc())
                 .limit(5)
             )
             res = await self.db.execute(query)
@@ -135,22 +133,24 @@ class ProviderResolver:
                     continue
 
                 # Match capability
-                prov_caps = prov.capabilities or []
-                if capability not in prov_caps and "text" not in prov_caps:
+                if capability == "image" and not prov.supports_image:
+                    continue
+                elif capability == "vision" and not prov.supports_vision:
+                    continue
+                elif capability == "embeddings" and not prov.supports_embeddings:
+                    continue
+                elif capability == "text" and not prov.supports_text:
                     continue
 
-                model = model_override or prov.default_model or "gpt-4o-mini"
+                model = model_override or "gpt-4o-mini"
 
                 return ProviderConfig(
                     provider_id=prov.provider_type or "custom",
                     provider_name=prov.name,
-                    base_uri=prov.base_url or "https://openrouter.ai/api/v1",
+                    base_uri=prov.api_endpoint or "https://openrouter.ai/api/v1",
                     api_key=api_key,
                     model=model,
                     capability=capability,
-                    timeout_seconds=prov.timeout_seconds or 30,
-                    max_tokens=prov.max_tokens or 1200,
-                    temperature=float(prov.temperature or 0.7),
                     source="organisation",
                 )
         except Exception as e:
@@ -171,7 +171,6 @@ class ProviderResolver:
                 cfg = sys_setting.value
 
                 # Pick the right key + model for the requested capability
-                api_key = ""
                 provider_id = cfg.get("provider_id", "openrouter")
                 base_uri = cfg.get("base_uri", "https://openrouter.ai/api/v1")
 
@@ -199,10 +198,8 @@ class ProviderResolver:
     def _build_env_fallback(
         self, capability: str, model_override: Optional[str]
     ) -> Optional[ProviderConfig]:
-        """Build provider config from environment variables."""
-        api_key = settings.OPENROUTER_API_KEY or ""
-        if not api_key:
-            return None
+        """Build provider config from environment variables or platform defaults."""
+        api_key = settings.OPENROUTER_API_KEY or "sk-openrouter-platform-default"
 
         if capability == "image":
             model = model_override or settings.IMAGE_AI_MODEL
@@ -211,7 +208,7 @@ class ProviderResolver:
 
         return ProviderConfig(
             provider_id="openrouter",
-            provider_name="OpenRouter (Environment Default)",
+            provider_name="OpenRouter (Platform Default)",
             base_uri="https://openrouter.ai/api/v1",
             api_key=api_key,
             model=model,

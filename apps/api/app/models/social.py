@@ -113,5 +113,6 @@ class SocialProfileSummary(BaseModel):
     posting_patterns = Column(Text, nullable=True)
     content_formats = Column(JSON, nullable=True)
     engagement_patterns = Column(Text, nullable=True)
+    summary_data = Column(JSON, nullable=True)
 
     social_account = relationship("SocialAccount", back_populates="summaries")

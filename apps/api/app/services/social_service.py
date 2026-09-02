@@ -272,7 +272,52 @@ class SocialService:
         return account
 
     async def _build_initial_ai_summary(self, account: SocialAccount):
-        # Create versioned AI summary
+        # Create versioned AI summary with rich structured summary_data per PRD §18
+        brand_name = account.account_name or account.username or "Brand"
+        summary_data = {
+            "brand": {
+                "name": brand_name,
+                "handle": account.username or "",
+                "description": f"Official profile for {brand_name} on {account.provider.capitalize()}",
+                "url": "",
+                "profile_image": account.profile_image_url or "",
+            },
+            "business": {
+                "category": "General Marketing & Brand Presence",
+                "follower_count": 0,
+                "following_count": 0,
+                "post_count": 0,
+            },
+            "platform": {
+                "name": account.provider,
+                "account_type": "business",
+            },
+            "audience": {
+                "description": "Engaged followers and industry professionals",
+                "data_source": "general_recommendation",
+            },
+            "tone": {
+                "description": "Professional, informative, and engaging",
+                "data_source": "ai_derived",
+                "confidence": "medium",
+            },
+            "voice": {"keywords": ["growth", "innovation", "technology", "leadership"], "style": "neutral"},
+            "topics": ["Industry news", "Product updates", "Community highlights", "Educational tips"],
+            "content_types": ["Educational", "Informational", "Promotional"],
+            "keywords": ["growth", "innovation", "technology", "leadership", "community"],
+            "hashtags": [f"#{account.provider}", "#brand", "#innovation", "#insights"],
+            "posting_patterns": {"recommendation": "Optimal activity during weekdays 10 AM to 6 PM"},
+            "best_times": [{"day": "Tuesday", "time": "10:00"}, {"day": "Thursday", "time": "14:00"}],
+            "successful_formats": ["Short text posts", "Images with concise copy", "Short videos"],
+            "data_quality": {
+                "observed_provider_data": True,
+                "ai_derived": True,
+                "has_historical_data": False,
+                "confidence": "medium",
+            },
+            "last_analysis_at": datetime.now(timezone.utc).isoformat(),
+        }
+
         summary = SocialProfileSummary(
             social_account_id=account.id,
             version=1,
@@ -287,6 +332,7 @@ class SocialService:
             posting_patterns="Optimal activity during weekdays 10 AM to 6 PM",
             content_formats=["Short text posts", "Images with concise copy", "Short videos"],
             engagement_patterns="Higher engagement on Tuesday and Thursday afternoons",
+            summary_data=summary_data,
         )
         self.db.add(summary)
 

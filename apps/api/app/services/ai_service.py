@@ -271,32 +271,27 @@ class AIService:
             "Include engaging hooks, structured body paragraphs, call-to-action, and relevant hashtags."
         )
 
-        model = model_override or settings.DEFAULT_AI_MODEL
-        api_key = settings.OPENROUTER_API_KEY
+        from app.services.provider_resolver import ProviderResolver
+        resolver = ProviderResolver(self.db)
+        provider = await resolver.resolve(
+            capability="text",
+            org_id=org.id,
+            model_override=model_override,
+        )
 
-        # Check system settings for overridden key
-        from app.models.system import SystemSetting
-        res = await self.db.execute(select(SystemSetting).where(SystemSetting.key == "ai_config"))
-        sys_ai = res.scalar_one_or_none()
-        if sys_ai and isinstance(sys_ai.value, dict):
-            if sys_ai.value.get("openrouter_api_key"):
-                api_key = sys_ai.value["openrouter_api_key"]
-            if not model_override and sys_ai.value.get("default_text_model"):
-                model = sys_ai.value["default_text_model"]
-
-        # Call OpenRouter API
+        # Call AI Provider endpoint
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 res = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
+                    f"{provider.base_uri.rstrip('/')}/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {api_key}",
+                        "Authorization": f"Bearer {provider.api_key}",
                         "HTTP-Referer": "https://pravah.app",
                         "X-Title": "PRAVAH Social AI",
                         "Content-Type": "application/json",
                     },
                     json={
-                        "model": model,
+                        "model": provider.model,
                         "messages": [
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": prompt},
