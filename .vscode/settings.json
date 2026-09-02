@@ -1,0 +1,13 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/apps/api/.venv/Scripts/python.exe",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/apps/api",
+    "${workspaceFolder}/apps/api/.venv/Lib/site-packages"
+  ],
+  "python.autoComplete.extraPaths": [
+    "${workspaceFolder}/apps/api",
+    "${workspaceFolder}/apps/api/.venv/Lib/site-packages"
+  ],
+  "python.envFile": "${workspaceFolder}/.env",
+  "editor.formatOnSave": true
+}

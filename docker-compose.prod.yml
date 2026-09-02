@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: pravah-prod-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - web
+      - api
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: pravah-prod-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pravah_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pravah_secure_prod_password}
+      POSTGRES_DB: ${POSTGRES_DB:-pravah_prod_db}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: pravah-prod-redis
+    restart: always
+    volumes:
+      - redis_prod_data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: pravah-prod-api
+    restart: always
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
+      - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    volumes:
+      - uploads_prod_data:/app/uploads
+    depends_on:
+      - postgres
+      - redis
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: pravah-prod-scheduler
+    restart: always
+    command: ["python", "-m", "app.workers.scheduler"]
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
+      - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    depends_on:
+      - api
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.web
+    container_name: pravah-prod-web
+    restart: always
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8000/api/v1
+    depends_on:
+      - api
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
+  uploads_prod_data:

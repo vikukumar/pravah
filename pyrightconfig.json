@@ -1,0 +1,12 @@
+{
+  "venvPath": "apps/api",
+  "venv": ".venv",
+  "extraPaths": [
+    "apps/api",
+    "apps/api/.venv/Lib/site-packages"
+  ],
+  "include": [
+    "apps/api"
+  ],
+  "pythonVersion": "3.12"
+}

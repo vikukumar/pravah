@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pravah-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pravah_user
+      POSTGRES_PASSWORD: pravah_password
+      POSTGRES_DB: pravah_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pravah_user -d pravah_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: pravah-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: pravah-api
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql+asyncpg://pravah_user:pravah_password@postgres:5432/pravah_db
+      - DATABASE_SYNC_URL=postgresql://pravah_user:pravah_password@postgres:5432/pravah_db
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=pravah_production_master_secret_key_minimum_32_chars
+      - ENCRYPTION_KEY=pravah_fernet_production_encryption_key_32_bytes
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: pravah-scheduler
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.scheduler"]
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql+asyncpg://pravah_user:pravah_password@postgres:5432/pravah_db
+      - DATABASE_SYNC_URL=postgresql://pravah_user:pravah_password@postgres:5432/pravah_db
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=pravah_production_master_secret_key_minimum_32_chars
+      - ENCRYPTION_KEY=pravah_fernet_production_encryption_key_32_bytes
+    depends_on:
+      - api
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.web
+    container_name: pravah-web
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:
