@@ -325,12 +325,16 @@ class BillingService:
         razorpay_signature: str,
         user: User,
     ) -> Subscription:
-        # Verify signature if secret configured
-        if settings.RAZORPAY_KEY_SECRET:
-            payload = f"{razorpay_order_id}|{razorpay_payment_id}".encode("utf-8")
-            expected_sig = hmac.new(settings.RAZORPAY_KEY_SECRET.encode("utf-8"), payload, hashlib.sha256).hexdigest()
-            if expected_sig != razorpay_signature:
-                raise PravahException("Invalid Razorpay payment signature", error_code="PAYMENT_VERIFICATION_FAILED")
+        # ALWAYS verify signature — never bypass verification
+        if not settings.RAZORPAY_KEY_SECRET:
+            raise PravahException(
+                "Razorpay payment verification failed: RAZORPAY_KEY_SECRET not configured. Contact administrator.",
+                error_code="PAYMENT_GATEWAY_NOT_CONFIGURED"
+            )
+        payload = f"{razorpay_order_id}|{razorpay_payment_id}".encode("utf-8")
+        expected_sig = hmac.new(settings.RAZORPAY_KEY_SECRET.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected_sig, razorpay_signature):
+            raise PravahException("Invalid Razorpay payment signature — payment rejected.", error_code="PAYMENT_VERIFICATION_FAILED")
 
         # Update payment record
         pay_res = await self.db.execute(select(Payment).where(Payment.gateway_order_id == razorpay_order_id))

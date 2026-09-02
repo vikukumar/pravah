@@ -83,7 +83,7 @@ export default function BillingPage() {
     if (!selectedPlanForUpgrade) return;
     setIsProcessingPayment(true);
     try {
-      // 1. Create order on server
+      // 1. Create real order on server
       const orderData = await fetchApi<any>("/billing/razorpay/create-order", {
         method: "POST",
         body: JSON.stringify({
@@ -92,23 +92,66 @@ export default function BillingPage() {
         }),
       });
 
-      // 2. Complete Razorpay signature verification
-      await fetchApi("/billing/razorpay/verify", {
-        method: "POST",
-        body: JSON.stringify({
-          plan_id: selectedPlanForUpgrade.id,
-          billing_period: billingPeriod,
-          razorpay_order_id: orderData.order_id,
-          razorpay_payment_id: `pay_${Math.random().toString(36).substring(2, 10)}`,
-          razorpay_signature: `sig_${Math.random().toString(36).substring(2, 12)}`,
-        }),
+      if (!orderData?.order_id || !orderData?.key_id) {
+        throw new Error("Payment gateway not configured. Contact administrator.");
+      }
+
+      // 2. Open real Razorpay JS SDK checkout modal
+      await new Promise<void>((resolve, reject) => {
+        // Dynamically load Razorpay checkout script
+        const loadScript = () =>
+          new Promise<void>((res, rej) => {
+            if ((window as any).Razorpay) { res(); return; }
+            const script = document.createElement("script");
+            script.src = "https://checkout.razorpay.com/v1/checkout.js";
+            script.onload = () => res();
+            script.onerror = () => rej(new Error("Failed to load Razorpay SDK."));
+            document.body.appendChild(script);
+          });
+
+        loadScript().then(() => {
+          const RazorpayInstance = new (window as any).Razorpay({
+            key: orderData.key_id,
+            order_id: orderData.order_id,
+            amount: orderData.amount,
+            currency: orderData.currency || "INR",
+            name: "PRAVAH",
+            description: `${selectedPlanForUpgrade!.name} Plan — ${billingPeriod}`,
+            prefill: { name: "", email: "" },
+            theme: { color: "#6366f1" },
+            handler: async (response: any) => {
+              try {
+                // 3. Verify real payment signature on server (HMAC-SHA256)
+                await fetchApi("/billing/razorpay/verify", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    plan_id: selectedPlanForUpgrade!.id,
+                    billing_period: billingPeriod,
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_signature: response.razorpay_signature,
+                  }),
+                });
+                resolve();
+              } catch (verifyErr: any) {
+                reject(verifyErr);
+              }
+            },
+            modal: {
+              ondismiss: () => reject(new Error("Payment cancelled.")),
+            },
+          });
+          RazorpayInstance.open();
+        }).catch(reject);
       });
 
       toast.success("Subscription Activated!", `Upgraded to ${selectedPlanForUpgrade.name} plan.`);
       setSelectedPlanForUpgrade(null);
       fetchData();
     } catch (err: any) {
-      toast.error("Payment Failed", err.message || "Could not complete transaction.");
+      if (err.message !== "Payment cancelled.") {
+        toast.error("Payment Failed", err.message || "Could not complete transaction.");
+      }
     } finally {
       setIsProcessingPayment(false);
     }
