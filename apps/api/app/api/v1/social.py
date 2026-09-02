@@ -1,23 +1,46 @@
-from typing import Any, Dict, List
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import logging
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import TenantContext, get_tenant_context, require_permission
-from app.core.database import get_db
+from app.api.deps import TenantContext, get_current_user, get_db, get_tenant_context, require_permission
+from app.core.config import settings
 from app.schemas.social import (
-    ConnectOAuthRequest,
     SocialAccountResponse,
     SocialPageResponse,
     SocialProfileSummaryResponse,
     SocialProviderResponse,
 )
 from app.services.social_service import SocialService
+from app.models.user import User
+
+logger = logging.getLogger("pravah.social")
 
 router = APIRouter()
 
-@router.get("/providers", response_model=List[SocialProviderResponse])
-async def list_social_providers(
-    db: AsyncSession = Depends(get_db)
+
+@router.get("/providers/available")
+async def list_available_providers(
+    tenant: TenantContext = Depends(get_tenant_context),
+    db: AsyncSession = Depends(get_db),
 ):
+    """
+    Returns social providers available for user connection.
+    Only providers where admin has configured valid credentials AND is_enabled=True.
+    Never returns unconfigured providers.
+    """
+    social_svc = SocialService(db)
+    return await social_svc.get_available_providers()
+
+
+@router.get("/providers")
+async def list_social_providers(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Admin-facing: Returns all provider definitions with capability matrix.
+    Does NOT include credential status -- use /admin/social/credential-status for that.
+    """
     social_svc = SocialService(db)
     providers = await social_svc.list_providers()
     return [
@@ -40,52 +63,183 @@ async def list_social_providers(
         for p in providers
     ]
 
+
 @router.get("/oauth-url")
 async def get_oauth_url(
     provider: str = Query(...),
     redirect_uri: str = Query(...),
-    state: str = Query("state_default"),
-    db: AsyncSession = Depends(get_db)
-):
-    social_svc = SocialService(db)
-    return social_svc.get_oauth_authorization_url(provider, redirect_uri, state)
-
-@router.post("/connect", response_model=SocialAccountResponse)
-async def connect_social_account(
-    payload: ConnectOAuthRequest,
     tenant: TenantContext = Depends(require_permission("social.connect")),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
+    """
+    Generates real OAuth authorization URL using admin DB-configured credentials.
+    Returns error if provider is not configured or disabled.
+    """
     social_svc = SocialService(db)
-    # Exchange authorization code for token and save connected account
-    acc = await social_svc.connect_account_with_token(
+    result = await social_svc.get_oauth_authorization_url(
+        provider_name=provider,
+        redirect_uri=redirect_uri,
         org_id=tenant.organisation.id,
-        provider=payload.provider.lower(),
-        account_id=f"{payload.provider}_acc_{payload.code[:8]}",
-        account_name=f"Official {payload.provider.capitalize()} Account",
-        access_token=f"{payload.provider}_oauth_token_{payload.code}",
-        username=f"@{tenant.organisation.slug}_{payload.provider}",
-        actor=tenant.user,
+        user_id=tenant.user.id,
     )
-    return SocialAccountResponse(
-        id=acc.id,
-        organisation_id=acc.organisation_id,
-        provider=acc.provider,
-        account_id=acc.account_id,
-        account_name=acc.account_name,
-        username=acc.username,
-        profile_image_url=acc.profile_image_url,
-        is_connected=acc.is_connected,
-        health_status=acc.health_status,
-        last_sync_at=acc.last_sync_at,
-        pages_count=len(acc.pages) if acc.pages else 0,
-        created_at=acc.created_at,
-    )
+    return result
+
+
+@router.get("/callback/{provider}")
+async def oauth_callback(
+    provider: str,
+    code: str = Query(None),
+    state: str = Query(None),
+    error: str = Query(None),
+    error_description: str = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Real OAuth callback endpoint. Provider redirects here after user grants authorization.
+    Validates CSRF state, exchanges code for tokens, fetches real profile, stores account.
+    Redirects to frontend with success/error.
+    """
+    frontend_base = settings.APP_URL
+
+    # Handle provider error
+    if error:
+        logger.warning(f"OAuth callback error for {provider}: {error} — {error_description}")
+        error_msg = error_description or error
+        return HTMLResponse(content=f"""
+        <script>
+            if (window.opener) {{
+                window.opener.postMessage({{
+                    type: 'SOCIAL_OAUTH_ERROR',
+                    provider: '{provider}',
+                    error: '{error_msg}'
+                }}, '*');
+                window.close();
+            }} else {{
+                window.location.href = '{frontend_base}/dashboard/social?error={error}';
+            }}
+        </script>
+        """)
+
+    if not code or not state:
+        return HTMLResponse(content=f"""
+        <script>
+            if (window.opener) {{
+                window.opener.postMessage({{
+                    type: 'SOCIAL_OAUTH_ERROR',
+                    provider: '{provider}',
+                    error: 'Missing authorization code or state parameter.'
+                }}, '*');
+                window.close();
+            }} else {{
+                window.location.href = '{frontend_base}/dashboard/social?error=missing_params';
+            }}
+        </script>
+        """)
+
+    social_svc = SocialService(db)
+
+    # Validate CSRF state
+    state_data = await social_svc.validate_and_consume_state(state)
+    if not state_data:
+        return HTMLResponse(content=f"""
+        <script>
+            if (window.opener) {{
+                window.opener.postMessage({{
+                    type: 'SOCIAL_OAUTH_ERROR',
+                    provider: '{provider}',
+                    error: 'Invalid or expired security state. Please try again.'
+                }}, '*');
+                window.close();
+            }} else {{
+                window.location.href = '{frontend_base}/dashboard/social?error=invalid_state';
+            }}
+        </script>
+        """)
+
+    org_id = state_data.get("org_id")
+    user_id = state_data.get("user_id")
+    redirect_uri = state_data.get("redirect_uri")
+
+    # Load user for actor
+    from sqlalchemy import select
+    from app.models.user import User as UserModel
+    user_res = await db.execute(select(UserModel).where(UserModel.id == user_id))
+    actor = user_res.scalar_one_or_none()
+
+    try:
+        # Exchange code for real tokens
+        token_data = await social_svc.exchange_oauth_code(
+            provider_name=provider,
+            code=code,
+            redirect_uri=redirect_uri,
+        )
+
+        access_token = token_data.get("access_token", "")
+        if not access_token:
+            raise ValueError("Provider returned empty access token.")
+
+        # Fetch real profile
+        profile = await social_svc.fetch_provider_profile(provider, access_token)
+        account_id = profile.get("id") or f"{provider}_{state[:8]}"
+        account_name = profile.get("name") or f"{provider.capitalize()} Account"
+        username = profile.get("username") or ""
+        profile_image_url = profile.get("profile_image_url") or ""
+
+        # Store encrypted tokens and create real social account
+        account = await social_svc.connect_account_with_token(
+            org_id=org_id,
+            provider=provider,
+            account_id=account_id,
+            account_name=account_name,
+            access_token=access_token,
+            refresh_token=token_data.get("refresh_token"),
+            token_expires_in=token_data.get("expires_in", 3600),
+            username=username,
+            profile_image_url=profile_image_url,
+            actor=actor,
+        )
+
+        logger.info(f"Successfully connected {provider} account {account_id} for org {org_id}")
+
+        return HTMLResponse(content=f"""
+        <script>
+            if (window.opener) {{
+                window.opener.postMessage({{
+                    type: 'SOCIAL_OAUTH_SUCCESS',
+                    provider: '{provider}',
+                    account_id: '{account.id}',
+                    account_name: '{account_name}'
+                }}, '*');
+                window.close();
+            }} else {{
+                window.location.href = '{frontend_base}/dashboard/social?success=connected&provider={provider}';
+            }}
+        </script>
+        """)
+
+    except Exception as e:
+        logger.error(f"OAuth connection failed for {provider}: {str(e)}")
+        error_detail = str(e)[:200]
+        return HTMLResponse(content=f"""
+        <script>
+            if (window.opener) {{
+                window.opener.postMessage({{
+                    type: 'SOCIAL_OAUTH_ERROR',
+                    provider: '{provider}',
+                    error: '{error_detail}'
+                }}, '*');
+                window.close();
+            }} else {{
+                window.location.href = '{frontend_base}/dashboard/social?error=connection_failed';
+            }}
+        </script>
+        """)
+
 
 @router.get("/accounts", response_model=List[SocialAccountResponse])
 async def list_social_accounts(
     tenant: TenantContext = Depends(require_permission("social.view")),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     social_svc = SocialService(db)
     accounts = await social_svc.list_organisation_accounts(tenant.organisation.id)
@@ -107,21 +261,23 @@ async def list_social_accounts(
         for a in accounts
     ]
 
+
 @router.delete("/accounts/{account_id}")
 async def disconnect_account(
     account_id: str,
     tenant: TenantContext = Depends(require_permission("social.disconnect")),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     social_svc = SocialService(db)
     await social_svc.disconnect_account(tenant.organisation.id, account_id, tenant.user)
     return {"message": "Account disconnected successfully."}
 
+
 @router.get("/accounts/{account_id}/profile-summary", response_model=SocialProfileSummaryResponse)
 async def get_profile_summary(
     account_id: str,
     tenant: TenantContext = Depends(require_permission("social.view")),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     social_svc = SocialService(db)
     summary = await social_svc.get_ai_profile_summary(account_id)

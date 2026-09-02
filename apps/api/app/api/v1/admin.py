@@ -245,6 +245,19 @@ async def get_admin_social_credentials(
         }
     return results
 
+@router.get("/social/credential-status")
+async def get_social_credential_status(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns configuration status for all social providers.
+    Shows which providers are fully ready (credentials + enabled) for users to connect.
+    """
+    from app.services.social_service import SocialService
+    social_svc = SocialService(db)
+    return await social_svc.get_provider_credential_status()
+
 @router.post("/social/credentials")
 async def update_admin_social_credentials(
     payload: Dict[str, Any],

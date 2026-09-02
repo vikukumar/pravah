@@ -279,70 +279,67 @@ class AIService:
             model_override=model_override,
         )
 
-        # Call AI Provider endpoint
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            try:
-                res = await client.post(
-                    f"{provider.base_uri.rstrip('/')}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {provider.api_key}",
-                        "HTTP-Referer": "https://pravah.app",
-                        "X-Title": "PRAVAH Social AI",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": provider.model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": prompt},
-                        ],
-                        "temperature": 0.7,
-                        "max_tokens": 1200,
-                    },
-                )
+        # Call AI Provider endpoint — no fake fallback
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{provider.base_uri.rstrip('/')}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {provider.api_key}",
+                    "HTTP-Referer": "https://pravah.app",
+                    "X-Title": "PRAVAH Social AI",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": provider.model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 1200,
+                },
+            )
 
-                if res.status_code == 200:
-                    data = res.json()
-                    content = data["choices"][0]["message"]["content"]
-                    tokens_used = data.get("usage", {}).get("total_tokens", 300)
-                    cost = tokens_used * 0.000003
+        if resp.status_code == 200:
+            data = resp.json()
+            generated_content = data["choices"][0]["message"]["content"]
+            tokens_used = data.get("usage", {}).get("total_tokens", 0)
+            cost = tokens_used * 0.000003
 
-                    # Record usage meter
-                    usage = AIUsage(
-                        organisation_id=org.id,
-                        user_id=user.id,
-                        model=model,
-                        prompt_tokens=data.get("usage", {}).get("prompt_tokens", 100),
-                        completion_tokens=data.get("usage", {}).get("completion_tokens", 200),
-                        total_tokens=tokens_used,
-                        cost_usd=cost,
-                    )
-                    self.db.add(usage)
-                    await self.db.commit()
+            # Record usage meter
+            usage_record = AIUsage(
+                organisation_id=org.id,
+                user_id=user.id,
+                model=provider.model,
+                prompt_tokens=data.get("usage", {}).get("prompt_tokens", 0),
+                completion_tokens=data.get("usage", {}).get("completion_tokens", 0),
+                total_tokens=tokens_used,
+                cost_usd=cost,
+            )
+            self.db.add(usage_record)
+            await self.db.commit()
 
-                    return {
-                        "content": content,
-                        "model": model,
-                        "tokens_used": tokens_used,
-                        "platforms": platforms,
-                    }
-                else:
-                    raise PravahException(f"AI API error: {res.text}")
-            except Exception as e:
-                # Deterministic fallback response when offline or key not active
-                fallback_content = (
-                    f"🚀 Excited to announce our latest update for {org.name}!\n\n"
-                    f"{prompt}\n\n"
-                    f"👉 Learn more and join the conversation in the comments below!\n\n"
-                    f"#{org.slug.replace('-', '')} #Innovation #SaaS #Growth"
-                )
-                return {
-                    "content": fallback_content,
-                    "model": model,
-                    "tokens_used": 150,
-                    "platforms": platforms,
-                    "notice": "Rendered via Pravah Brand Voice Engine",
-                }
+            return {
+                "content": generated_content,
+                "model": provider.model,
+                "tokens_used": tokens_used,
+                "platforms": platforms,
+            }
+        elif resp.status_code == 401:
+            raise PravahException(
+                detail="AI provider authentication failed. Please check your API key in Admin → AI Providers.",
+                error_code="AI_AUTH_ERROR"
+            )
+        elif resp.status_code == 429:
+            raise PravahException(
+                detail="AI provider rate limit exceeded. Please try again shortly.",
+                error_code="AI_RATE_LIMITED"
+            )
+        else:
+            raise PravahException(
+                detail=f"AI provider returned error {resp.status_code}: {resp.text[:300]}",
+                error_code="AI_API_ERROR"
+            )
 
     async def generate_creative_image(
         self,
@@ -352,21 +349,70 @@ class AIService:
         style: str = "photorealistic",
         aspect_ratio: str = "1:1",
     ) -> Dict[str, Any]:
-        """Generates AI creative visual assets."""
-        model = settings.IMAGE_AI_MODEL
-        simulated_url = f"/images/pravah_horizontal_logo.png"
+        """Generates AI creative visual assets using the configured image provider."""
+        from app.services.provider_resolver import ProviderResolver
+        resolver = ProviderResolver(self.db)
 
-        # Record visual asset in database
+        try:
+            provider = await resolver.resolve(
+                capability="image",
+                org_id=org.id,
+                model_override=None,
+            )
+        except Exception:
+            raise PravahException(
+                detail="No image generation provider is configured. Configure an AI provider with image capability in Admin → AI Providers.",
+                error_code="IMAGE_PROVIDER_NOT_CONFIGURED"
+            )
+
+        # Build enriched image prompt with style direction
+        enriched_prompt = f"{prompt}. Style: {style}. Brand context: {org.name}."
+        if aspect_ratio == "16:9":
+            enriched_prompt += " Landscape orientation, widescreen."
+        elif aspect_ratio == "9:16":
+            enriched_prompt += " Portrait orientation, mobile-first."
+
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            resp = await client.post(
+                f"{provider.base_uri.rstrip('/')}/images/generations",
+                headers={
+                    "Authorization": f"Bearer {provider.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": provider.model,
+                    "prompt": enriched_prompt,
+                    "n": 1,
+                    "size": "1024x1024" if aspect_ratio == "1:1" else "1792x1024",
+                    "response_format": "url",
+                },
+            )
+
+        if resp.status_code != 200:
+            raise PravahException(
+                detail=f"Image generation failed ({resp.status_code}): {resp.text[:200]}",
+                error_code="IMAGE_GEN_ERROR"
+            )
+
+        data = resp.json()
+        image_url = data.get("data", [{}])[0].get("url", "")
+        if not image_url:
+            raise PravahException(
+                detail="Image generation succeeded but provider returned no URL.",
+                error_code="IMAGE_GEN_NO_URL"
+            )
+
+        # Record generated asset in database with real URL
         asset = ContentAsset(
             organisation_id=org.id,
             uploader_id=user.id,
             filename=f"ai_gen_{uuid.uuid4().hex[:8]}.png",
-            original_filename=f"{prompt[:20].strip()}.png",
+            original_filename=f"{prompt[:40].strip()}.png",
             file_path=f"uploads/generated/{uuid.uuid4().hex[:8]}.png",
-            file_url=simulated_url,
+            file_url=image_url,
             mime_type="image/png",
-            file_size_bytes=1024 * 350,
-            dimensions="1024x1024" if aspect_ratio == "1:1" else "1200x675",
+            file_size_bytes=0,
+            dimensions="1024x1024" if aspect_ratio == "1:1" else "1792x1024",
             is_ai_generated=True,
             prompt=prompt,
             tags=["ai_generated", style, aspect_ratio],
@@ -376,8 +422,9 @@ class AIService:
 
         return {
             "asset_id": asset.id,
-            "url": asset.file_url,
+            "url": image_url,
             "prompt": prompt,
             "aspect_ratio": aspect_ratio,
             "style": style,
+            "model": provider.model,
         }
