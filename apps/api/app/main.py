@@ -81,15 +81,25 @@ async def generic_exception_handler(request: Request, exc: Exception):
         },
     )
 
-# Health Probes
+# Health & Version Probes
 @app.get("/health", tags=["Observability"])
 async def health_check():
+    from app.core.version import get_version_info
+    v_info = get_version_info()
     return {
         "status": "healthy",
         "app": settings.PROJECT_NAME,
-        "version": settings.VERSION,
+        "version": v_info["backend_version"],
+        "api_version": settings.API_V1_STR,
+        "schema_version": v_info.get("schema_version"),
         "environment": settings.ENVIRONMENT,
     }
+
+@app.get("/version", tags=["Observability"])
+@app.get(f"{settings.API_V1_STR}/version", tags=["Observability"])
+async def version_endpoint():
+    from app.core.version import get_version_info
+    return get_version_info()
 
 @app.get("/ready", tags=["Observability"])
 async def readiness_check():
