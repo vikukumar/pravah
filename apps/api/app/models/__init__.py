@@ -36,10 +36,15 @@ from app.models.content import (
 )
 from app.models.workflow import (
     Workflow,
+    WorkflowVersion,
     WorkflowNode,
     WorkflowEdge,
+    WorkflowVariable,
+    WorkflowSecretReference,
     WorkflowExecution,
     WorkflowNodeExecution,
+    WorkflowTemplate,
+    WorkflowRunLock,
 )
 from app.models.ai import (
     AIProvider,
@@ -108,10 +113,15 @@ __all__ = [
     "ContentApproval",
     "ContentSchedule",
     "Workflow",
+    "WorkflowVersion",
     "WorkflowNode",
     "WorkflowEdge",
+    "WorkflowVariable",
+    "WorkflowSecretReference",
     "WorkflowExecution",
     "WorkflowNodeExecution",
+    "WorkflowTemplate",
+    "WorkflowRunLock",
     "AIProvider",
     "AIModel",
     "AIUsage",
