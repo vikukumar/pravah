@@ -45,6 +45,7 @@ def _provider_to_dict(p: AIProvider, include_masked_key: bool = True) -> Dict[st
         "masked_api_key": masked,
         "is_default": p.is_default,
         "is_enabled": p.is_enabled,
+        "default_model": p.default_model,
         "supports_text": p.supports_text,
         "supports_image": p.supports_image,
         "supports_vision": p.supports_vision,
@@ -123,6 +124,7 @@ async def create_org_provider(
         api_key_encrypted=encrypted_key,
         is_default=payload.get("is_default", is_first),
         is_enabled=True,
+        default_model=payload.get("default_model") or None,
         supports_text=payload.get("supports_text", True),
         supports_image=payload.get("supports_image", provider_type in ("openai", "openrouter")),
         supports_vision=payload.get("supports_vision", provider_type in ("openai", "openrouter", "google")),
@@ -180,6 +182,8 @@ async def update_org_provider(
         provider.api_endpoint = payload["api_endpoint"].strip()
     if "api_key" in payload and payload["api_key"]:
         provider.api_key_encrypted = encrypt_string(payload["api_key"].strip())
+    if "default_model" in payload:
+        provider.default_model = payload["default_model"] or None
     if "is_enabled" in payload:
         provider.is_enabled = bool(payload["is_enabled"])
     if "supports_text" in payload:

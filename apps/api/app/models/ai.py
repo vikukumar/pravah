@@ -17,6 +17,7 @@ class AIProvider(BaseModel):
     
     is_default = Column(Boolean, default=False, nullable=False)
     is_enabled = Column(Boolean, default=True, nullable=False)
+    default_model = Column(String(200), nullable=True)  # e.g. "anthropic/claude-3.5-sonnet"
     
     # Capabilities
     supports_text = Column(Boolean, default=True, nullable=False)

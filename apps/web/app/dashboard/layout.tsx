@@ -31,6 +31,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Menu,
+  KeyRound,
 } from "lucide-react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -69,6 +70,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navItems = [
     { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
     { name: "AI Studio", href: "/dashboard/ai-studio", icon: Bot, highlight: true },
+    { name: "AI Providers", href: "/dashboard/ai-providers", icon: KeyRound },
     { name: "Content & Posts", href: "/dashboard/content", icon: FileText },
     { name: "Calendar", href: "/dashboard/calendar", icon: Calendar },
     { name: "Social Accounts", href: "/dashboard/social", icon: Share2 },

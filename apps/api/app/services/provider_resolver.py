@@ -142,7 +142,33 @@ class ProviderResolver:
                 elif capability == "text" and not prov.supports_text:
                     continue
 
-                model = model_override or "gpt-4o-mini"
+                # Resolve model: model_override > provider.default_model > per-provider catalog default
+                PROVIDER_MODEL_DEFAULTS = {
+                    "openrouter": "anthropic/claude-3.5-sonnet",
+                    "openai": "gpt-4o-mini",
+                    "anthropic": "claude-3-5-haiku-latest",
+                    "google": "gemini-1.5-flash",
+                    "groq": "llama-3.3-70b-versatile",
+                    "perplexity": "sonar",
+                    "cohere": "command-r",
+                }
+                IMAGE_MODEL_DEFAULTS = {
+                    "openrouter": "black-forest-labs/flux-1-schnell",
+                    "openai": "dall-e-3",
+                }
+
+                if capability == "image":
+                    model = (
+                        model_override
+                        or (prov.default_model if prov.supports_image else None)
+                        or IMAGE_MODEL_DEFAULTS.get(prov.provider_type or "openrouter", "black-forest-labs/flux-1-schnell")
+                    )
+                else:
+                    model = (
+                        model_override
+                        or prov.default_model
+                        or PROVIDER_MODEL_DEFAULTS.get(prov.provider_type or "openrouter", "anthropic/claude-3.5-sonnet")
+                    )
 
                 return ProviderConfig(
                     provider_id=prov.provider_type or "custom",
