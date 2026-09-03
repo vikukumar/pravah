@@ -66,7 +66,7 @@ async def list_provider_catalog() -> List[Dict[str, Any]]:
 
 @router.get("")
 async def list_org_providers(
-    tenant: TenantContext = Depends(require_permission("ai.manage_providers")),
+    tenant: TenantContext = Depends(require_permission("ai.custom_provider")),
     db: AsyncSession = Depends(get_db),
 ) -> List[Dict[str, Any]]:
     """List all AI providers configured for this organisation."""
@@ -82,7 +82,7 @@ async def list_org_providers(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_org_provider(
     payload: Dict[str, Any],
-    tenant: TenantContext = Depends(require_permission("ai.manage_providers")),
+    tenant: TenantContext = Depends(require_permission("ai.custom_provider")),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """
@@ -160,7 +160,7 @@ async def create_org_provider(
 async def update_org_provider(
     provider_id: str,
     payload: Dict[str, Any],
-    tenant: TenantContext = Depends(require_permission("ai.manage_providers")),
+    tenant: TenantContext = Depends(require_permission("ai.custom_provider")),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """Update an existing org AI provider. Partial updates supported."""
@@ -209,7 +209,7 @@ async def update_org_provider(
 @router.post("/{provider_id}/set-default")
 async def set_default_provider(
     provider_id: str,
-    tenant: TenantContext = Depends(require_permission("ai.manage_providers")),
+    tenant: TenantContext = Depends(require_permission("ai.custom_provider")),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """Set a provider as the default for this organisation."""
@@ -239,7 +239,7 @@ async def set_default_provider(
 @router.post("/{provider_id}/test")
 async def test_org_provider(
     provider_id: str,
-    tenant: TenantContext = Depends(require_permission("ai.manage_providers")),
+    tenant: TenantContext = Depends(require_permission("ai.custom_provider")),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """
@@ -276,7 +276,7 @@ async def test_org_provider(
 @router.delete("/{provider_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_org_provider(
     provider_id: str,
-    tenant: TenantContext = Depends(require_permission("ai.manage_providers")),
+    tenant: TenantContext = Depends(require_permission("ai.custom_provider")),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove an org AI provider. If it was the default, the platform default takes over."""
@@ -302,3 +302,4 @@ async def delete_org_provider(
     db.add(audit)
     await db.delete(provider)
     await db.commit()
+

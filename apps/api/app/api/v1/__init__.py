@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from app.api.v1.admin import router as admin_router
 from app.api.v1.ai import router as ai_router
+from app.api.v1.ai_providers import router as ai_providers_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.billing import router as billing_router
@@ -21,6 +22,7 @@ api_router.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(organisations_router, prefix="/organisations", tags=["Organisations"])
 api_router.include_router(social_router, prefix="/social", tags=["Social Media"])
 api_router.include_router(ai_router, prefix="/ai", tags=["AI Studio"])
+api_router.include_router(ai_providers_router, prefix="/ai/providers", tags=["AI Providers"])
 api_router.include_router(content_router, prefix="/content", tags=["Content & Calendar"])
 api_router.include_router(campaigns_router, prefix="/campaigns", tags=["Campaigns"])
 api_router.include_router(media_router, prefix="/media", tags=["Media Library"])
