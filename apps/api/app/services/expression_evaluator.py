@@ -16,7 +16,7 @@ Security: Uses only string template substitution and ast.literal_eval.
 
 import ast
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 # Pattern: {{ ... }} with content inside
 _EXPR_PATTERN = re.compile(r"\{\{([^}]+)\}\}")

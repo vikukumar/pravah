@@ -1,8 +1,8 @@
-from typing import Any, Dict, List, Optional
-from sqlalchemy import delete, select
+from typing import List, Optional
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.core.exceptions import ConflictException, NotFoundException
+from app.core.exceptions import ConflictException
 from app.models.organisation import Permission, Role, RolePermission
 from app.models.user import User
 
