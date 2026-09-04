@@ -1,4 +1,4 @@
-export const FRONTEND_VERSION = "1.0.1";
+export const FRONTEND_VERSION = "1.0.2";
 export const MIN_COMPATIBLE_BACKEND_VERSION = "1.0.0";
 export const API_VERSION = "v1";
 export const RELEASE_CODENAME = "StreamFlow";

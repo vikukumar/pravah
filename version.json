@@ -1,8 +1,8 @@
 {
-  "version": "1.0.1",
-  "backend": "1.0.1",
-  "frontend": "1.0.1",
-  "shared_types": "1.0.1",
+  "version": "1.0.2",
+  "backend": "1.0.2",
+  "frontend": "1.0.2",
+  "shared_types": "1.0.2",
   "api_version": "v1",
   "schema_version": "c61b97841082",
   "min_compatible_backend": "1.0.0",
