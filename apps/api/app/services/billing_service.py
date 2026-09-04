@@ -3,11 +3,13 @@ import hmac
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+import httpx
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.exceptions import ConflictException, NotFoundException, PravahException
+from app.services.credential_resolver import CredentialResolver
 from app.models.ai import AIUsage
 from app.models.billing import (
     Payment,
@@ -285,15 +287,45 @@ class BillingService:
         }
 
     async def create_razorpay_order(self, org_id: str, plan_id: str, billing_period: str, user: User) -> Dict[str, Any]:
+        """Creates a real Razorpay order via the Razorpay Orders API."""
+        cred_resolver = CredentialResolver(self.db)
+        rzp = await cred_resolver.get_razorpay()  # raises if not configured
+
         plan_res = await self.db.execute(select(Plan).where(Plan.id == plan_id))
         plan = plan_res.scalar_one_or_none()
         if not plan:
             raise NotFoundException("Plan not found")
 
         amount = plan.price_yearly if billing_period == "yearly" else plan.price_monthly
-        order_id = f"order_rzp_{uuid.uuid4().hex[:12]}"
+        receipt = f"rcpt_{uuid.uuid4().hex[:8]}"
 
-        # Record payment intent
+        # Call real Razorpay Orders API
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://api.razorpay.com/v1/orders",
+                auth=(rzp.key_id, rzp.key_secret),
+                json={
+                    "amount": int(amount * 100),  # paise
+                    "currency": plan.currency,
+                    "receipt": receipt,
+                    "notes": {
+                        "org_id": org_id,
+                        "plan_id": plan_id,
+                        "plan_name": plan.name,
+                        "billing_period": billing_period,
+                    },
+                },
+            )
+
+        if resp.status_code not in (200, 201):
+            raise PravahException(
+                detail=f"Razorpay order creation failed: {resp.text[:400]}",
+                error_code="RAZORPAY_ORDER_FAILED",
+            )
+
+        order_data = resp.json()
+        real_order_id = order_data["id"]
+
         payment = Payment(
             organisation_id=org_id,
             user_id=user.id,
@@ -301,18 +333,19 @@ class BillingService:
             amount=amount,
             currency=plan.currency,
             status="created",
-            gateway_order_id=order_id,
-            receipt=f"rcpt_{uuid.uuid4().hex[:8]}",
+            gateway_order_id=real_order_id,
+            receipt=receipt,
         )
         self.db.add(payment)
         await self.db.commit()
 
         return {
-            "order_id": order_id,
-            "amount": int(amount * 100), # Razorpay uses paise / cents
+            "order_id": real_order_id,
+            "amount": int(amount * 100),
             "currency": plan.currency,
-            "key_id": settings.RAZORPAY_KEY_ID or "rzp_test_public_key_pravah",
+            "key_id": rzp.key_id,         # public key, safe to expose
             "plan_name": plan.name,
+            "source": rzp.source,
         }
 
     async def verify_razorpay_payment(
@@ -325,14 +358,13 @@ class BillingService:
         razorpay_signature: str,
         user: User,
     ) -> Subscription:
-        # ALWAYS verify signature — never bypass verification
-        if not settings.RAZORPAY_KEY_SECRET:
-            raise PravahException(
-                "Razorpay payment verification failed: RAZORPAY_KEY_SECRET not configured. Contact administrator.",
-                error_code="PAYMENT_GATEWAY_NOT_CONFIGURED"
-            )
-        payload = f"{razorpay_order_id}|{razorpay_payment_id}".encode("utf-8")
-        expected_sig = hmac.new(settings.RAZORPAY_KEY_SECRET.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+        # Resolve secret via priority chain (DB -> env)
+        cred_resolver = CredentialResolver(self.db)
+        rzp = await cred_resolver.get_razorpay()  # raises if not configured
+
+        # HMAC-SHA256 signature verification — never bypass
+        payload_bytes = f"{razorpay_order_id}|{razorpay_payment_id}".encode("utf-8")
+        expected_sig = hmac.new(rzp.key_secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected_sig, razorpay_signature):
             raise PravahException("Invalid Razorpay payment signature — payment rejected.", error_code="PAYMENT_VERIFICATION_FAILED")
 
@@ -387,13 +419,67 @@ class BillingService:
         return sub
 
     async def create_cashfree_order(self, org_id: str, plan_id: str, billing_period: str, user: User) -> Dict[str, Any]:
+        """Creates a real Cashfree payment order via the Cashfree Orders API."""
+        cred_resolver = CredentialResolver(self.db)
+        cf = await cred_resolver.get_cashfree()  # raises if not configured
+
         plan_res = await self.db.execute(select(Plan).where(Plan.id == plan_id))
         plan = plan_res.scalar_one_or_none()
         if not plan:
             raise NotFoundException("Plan not found")
 
         amount = plan.price_yearly if billing_period == "yearly" else plan.price_monthly
-        order_id = f"order_cf_{uuid.uuid4().hex[:12]}"
+        order_id = f"pravah_{uuid.uuid4().hex[:12]}"
+
+        # Determine API base URL based on environment
+        is_prod = cf.environment.upper() == "PROD"
+        base_url = "https://api.cashfree.com/pg" if is_prod else "https://sandbox.cashfree.com/pg"
+        api_version = "2023-08-01"
+
+        # Get user's email/phone for Cashfree customer object
+        user_res = await self.db.execute(select(User).where(User.id == user.id))
+        _user = user_res.scalar_one_or_none() or user
+
+        # Call real Cashfree Orders API
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{base_url}/orders",
+                headers={
+                    "x-client-id": cf.app_id,
+                    "x-client-secret": cf.secret_key,
+                    "x-api-version": api_version,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "order_id": order_id,
+                    "order_amount": float(amount),
+                    "order_currency": plan.currency,
+                    "customer_details": {
+                        "customer_id": user.id,
+                        "customer_email": _user.email or "user@example.com",
+                        "customer_phone": getattr(_user, "phone", None) or "9999999999",
+                        "customer_name": f"{getattr(_user, 'first_name', '')} {getattr(_user, 'last_name', '')}".strip() or "Pravah User",
+                    },
+                    "order_meta": {
+                        "notify_url": f"{settings.API_URL}/api/v1/billing/cashfree/webhook",
+                    },
+                    "order_tags": {
+                        "org_id": org_id,
+                        "plan_id": plan_id,
+                        "billing_period": billing_period,
+                    },
+                },
+            )
+
+        if resp.status_code not in (200, 201):
+            raise PravahException(
+                detail=f"Cashfree order creation failed: {resp.text[:400]}",
+                error_code="CASHFREE_ORDER_FAILED",
+            )
+
+        order_data = resp.json()
+        payment_session_id = order_data.get("payment_session_id", "")
+        real_order_id = order_data.get("order_id", order_id)
 
         payment = Payment(
             organisation_id=org_id,
@@ -402,15 +488,17 @@ class BillingService:
             amount=amount,
             currency=plan.currency,
             status="created",
-            gateway_order_id=order_id,
+            gateway_order_id=real_order_id,
         )
         self.db.add(payment)
         await self.db.commit()
 
         return {
-            "order_id": order_id,
-            "payment_session_id": f"session_cf_{uuid.uuid4().hex[:16]}",
+            "order_id": real_order_id,
+            "payment_session_id": payment_session_id,   # real session from Cashfree
             "amount": amount,
             "currency": plan.currency,
             "plan_name": plan.name,
+            "environment": cf.environment,
+            "source": cf.source,
         }

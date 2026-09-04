@@ -221,7 +221,140 @@ async def update_admin_ai_providers(
     return {"message": "AI providers configuration updated successfully."}
 
 # ------------------------------------------------------------------------------
-# Social Media OAuth Keys & Secrets Management
+# Payment Gateway Configuration (Razorpay + Cashfree)
+# DB -> EnvVar -> Disabled priority chain
+# ------------------------------------------------------------------------------
+@router.get("/payment-gateways/status")
+async def get_payment_gateway_status(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns configuration status for all payment gateways.
+    Shows which gateways are active and where credentials come from (db / env / disabled).
+    """
+    from app.services.credential_resolver import CredentialResolver
+    resolver = CredentialResolver(db)
+    return await resolver.get_all_status()
+
+@router.get("/payment-gateways/razorpay")
+async def get_razorpay_config(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns Razorpay credential status (masked key, source, webhook configured)."""
+    from app.services.credential_resolver import CredentialResolver
+    resolver = CredentialResolver(db)
+    return await resolver.get_razorpay_status()
+
+@router.post("/payment-gateways/razorpay")
+async def update_razorpay_config(
+    payload: Dict[str, Any],
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Save Razorpay credentials to DB. These override environment variables.
+    Accepts: key_id, key_secret, webhook_secret, environment (test/live).
+    """
+    from app.core.encryption import encrypt_string
+    from app.services.admin_service import AdminService
+    admin_svc = AdminService(db)
+    existing = await admin_svc.get_system_settings(public_only=False)
+    cfg = existing.get("payment_gateway_config", {})
+    rzp = cfg.get("razorpay", {})
+
+    if "key_id" in payload and payload["key_id"]:
+        rzp["key_id"] = payload["key_id"].strip()
+    if "key_secret" in payload and payload["key_secret"] and not payload["key_secret"].startswith("xxxx"):
+        rzp["key_secret_encrypted"] = encrypt_string(payload["key_secret"].strip())
+    if "webhook_secret" in payload and payload["webhook_secret"] and not payload["webhook_secret"].startswith("xxxx"):
+        rzp["webhook_secret_encrypted"] = encrypt_string(payload["webhook_secret"].strip())
+    if "environment" in payload:
+        rzp["environment"] = payload["environment"]  # "live" or "test"
+
+    cfg["razorpay"] = rzp
+    await admin_svc.set_system_setting(
+        key="payment_gateway_config",
+        value=cfg,
+        is_public=False,
+        description="Payment gateway credentials (Razorpay, Cashfree) — encrypted at rest",
+    )
+    return {"message": "Razorpay configuration saved. DB credentials now override environment variables."}
+
+@router.delete("/payment-gateways/razorpay")
+async def clear_razorpay_config(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Remove Razorpay credentials from DB — system falls back to environment variables."""
+    from app.services.admin_service import AdminService
+    admin_svc = AdminService(db)
+    existing = await admin_svc.get_system_settings(public_only=False)
+    cfg = existing.get("payment_gateway_config", {})
+    cfg.pop("razorpay", None)
+    await admin_svc.set_system_setting(key="payment_gateway_config", value=cfg, is_public=False,
+                                       description="Payment gateway credentials")
+    return {"message": "Razorpay DB credentials cleared. System will now use environment variables."}
+
+@router.get("/payment-gateways/cashfree")
+async def get_cashfree_config(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns Cashfree credential status (masked app_id, environment, source)."""
+    from app.services.credential_resolver import CredentialResolver
+    resolver = CredentialResolver(db)
+    return await resolver.get_cashfree_status()
+
+@router.post("/payment-gateways/cashfree")
+async def update_cashfree_config(
+    payload: Dict[str, Any],
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Save Cashfree credentials to DB. These override environment variables.
+    Accepts: app_id, secret_key, environment (TEST/PROD).
+    """
+    from app.core.encryption import encrypt_string
+    from app.services.admin_service import AdminService
+    admin_svc = AdminService(db)
+    existing = await admin_svc.get_system_settings(public_only=False)
+    cfg = existing.get("payment_gateway_config", {})
+    cf = cfg.get("cashfree", {})
+
+    if "app_id" in payload and payload["app_id"]:
+        cf["app_id"] = payload["app_id"].strip()
+    if "secret_key" in payload and payload["secret_key"] and not payload["secret_key"].startswith("xxxx"):
+        cf["secret_key_encrypted"] = encrypt_string(payload["secret_key"].strip())
+    if "environment" in payload:
+        cf["environment"] = payload["environment"].upper()  # "TEST" or "PROD"
+
+    cfg["cashfree"] = cf
+    await admin_svc.set_system_setting(
+        key="payment_gateway_config",
+        value=cfg,
+        is_public=False,
+        description="Payment gateway credentials (Razorpay, Cashfree) — encrypted at rest",
+    )
+    return {"message": "Cashfree configuration saved. DB credentials now override environment variables."}
+
+@router.delete("/payment-gateways/cashfree")
+async def clear_cashfree_config(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Remove Cashfree credentials from DB — system falls back to environment variables."""
+    from app.services.admin_service import AdminService
+    admin_svc = AdminService(db)
+    existing = await admin_svc.get_system_settings(public_only=False)
+    cfg = existing.get("payment_gateway_config", {})
+    cfg.pop("cashfree", None)
+    await admin_svc.set_system_setting(key="payment_gateway_config", value=cfg, is_public=False,
+                                       description="Payment gateway credentials")
+    return {"message": "Cashfree DB credentials cleared. System will now use environment variables."}
+
 # ------------------------------------------------------------------------------
 @router.get("/social/credentials")
 async def get_admin_social_credentials(

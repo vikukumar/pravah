@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.encryption import decrypt_secret, encrypt_secret, decrypt_string, encrypt_string
 from app.core.exceptions import ConflictException, NotFoundException, PravahException
+from app.services.credential_resolver import CredentialResolver
 from app.models.social import (
     SocialAccount,
     SocialPage,
@@ -124,11 +125,16 @@ class SocialService:
     async def get_available_providers(self) -> List[Dict[str, Any]]:
         """
         Returns providers available for user connection.
-        A provider is available only if:
-        1. Admin has configured client_id + client_secret in DB
-        2. Provider is_enabled=True in DB
+        Priority chain: DB credentials -> env vars -> disabled.
+        A provider is surfaced only when credentials resolve successfully.
         """
-        admin_creds = await self._get_admin_credentials()
+        cred_resolver = CredentialResolver(self.db)
+        social_status = await cred_resolver.get_social_status()
+
+        # instagram shares facebook credentials
+        if social_status.get("facebook", {}).get("enabled"):
+            social_status["instagram"] = social_status["facebook"]
+
         all_providers_res = await self.db.execute(
             select(SocialProvider).where(SocialProvider.is_enabled == True)
         )
@@ -136,61 +142,62 @@ class SocialService:
 
         available = []
         for prov in enabled_providers:
-            p_creds = admin_creds.get(prov.name, {})
-            has_client_id = bool(p_creds.get("client_id", "").strip())
-            has_client_secret = bool(p_creds.get("client_secret_encrypted"))
-            if has_client_id and has_client_secret:
-                available.append({
-                    "id": prov.id,
-                    "name": prov.name,
-                    "display_name": prov.display_name,
-                    "icon_url": prov.icon_url,
-                    "is_enabled": True,
-                    "configured": True,
-                    "supports_text": prov.supports_text,
-                    "supports_image": prov.supports_image,
-                    "supports_video": prov.supports_video,
-                    "supports_carousel": prov.supports_carousel,
-                    "supports_pages": prov.supports_pages,
-                    "supports_analytics": prov.supports_analytics,
-                    "supports_scheduling": prov.supports_scheduling,
-                    "supports_comments": prov.supports_comments,
-                    "max_char_limit": prov.max_char_limit,
-                })
+            prov_status = social_status.get(prov.name, {})
+            if not prov_status.get("enabled") or not prov_status.get("is_enabled", True):
+                continue
+            available.append({
+                "id": prov.id,
+                "name": prov.name,
+                "display_name": prov.display_name,
+                "icon_url": prov.icon_url,
+                "is_enabled": True,
+                "configured": True,
+                "credential_source": prov_status.get("source", "db"),
+                "supports_text": prov.supports_text,
+                "supports_image": prov.supports_image,
+                "supports_video": prov.supports_video,
+                "supports_carousel": prov.supports_carousel,
+                "supports_pages": prov.supports_pages,
+                "supports_analytics": prov.supports_analytics,
+                "supports_scheduling": prov.supports_scheduling,
+                "supports_comments": prov.supports_comments,
+                "max_char_limit": prov.max_char_limit,
+            })
         return available
 
     async def get_provider_credential_status(self) -> List[Dict[str, Any]]:
-        """For admin: returns all providers with their credential configuration status."""
-        admin_creds = await self._get_admin_credentials()
+        """For admin: returns all providers with their credential configuration status (DB + env)."""
+        cred_resolver = CredentialResolver(self.db)
+        social_status = await cred_resolver.get_social_status()
         all_providers_res = await self.db.execute(select(SocialProvider))
         all_providers = list(all_providers_res.scalars().all())
 
         results = []
         for prov in all_providers:
-            p_creds = admin_creds.get(prov.name, {})
-            has_client_id = bool(p_creds.get("client_id", "").strip())
-            has_client_secret = bool(p_creds.get("client_secret_encrypted"))
-            is_enabled = prov.is_enabled
+            # instagram shares facebook credentials
+            status_key = "facebook" if prov.name == "instagram" else prov.name
+            prov_status = social_status.get(status_key, {})
+            is_enabled = prov_status.get("is_enabled", False)
+            has_creds = prov_status.get("enabled", False)
 
-            if has_client_id and has_client_secret and is_enabled:
-                status = "ready"
-            elif has_client_id and has_client_secret:
-                status = "configured_disabled"
-            elif has_client_id or has_client_secret:
-                status = "partially_configured"
+            if has_creds and is_enabled:
+                config_status = "ready"
+            elif has_creds:
+                config_status = "configured_disabled"
             else:
-                status = "not_configured"
+                config_status = "not_configured"
 
             results.append({
                 "id": prov.id,
                 "name": prov.name,
                 "display_name": prov.display_name,
                 "icon_url": prov.icon_url,
-                "is_enabled": is_enabled,
-                "configuration_status": status,
-                "has_client_id": has_client_id,
-                "has_client_secret": has_client_secret,
-                "redirect_uri": p_creds.get("redirect_uri", ""),
+                "is_enabled": prov.is_enabled,
+                "configuration_status": config_status,
+                "has_client_id": has_creds,
+                "has_client_secret": has_creds,
+                "credential_source": prov_status.get("source", "disabled"),
+                "redirect_uri": prov_status.get("redirect_uri", ""),
                 "supports_text": prov.supports_text,
                 "supports_image": prov.supports_image,
                 "supports_video": prov.supports_video,
@@ -254,35 +261,23 @@ class SocialService:
         org_id: str,
         user_id: str,
     ) -> Dict[str, Any]:
-        """Builds real OAuth authorization URL using admin-configured DB credentials."""
+        """Builds real OAuth authorization URL using DB->env priority chain for credentials."""
         provider_name = provider_name.lower().strip()
 
         if provider_name not in PROVIDER_OAUTH_CONFIG:
             raise NotFoundException(f"Unsupported social provider: {provider_name}")
 
         oauth_config = PROVIDER_OAUTH_CONFIG[provider_name]
-        admin_creds = await self._get_admin_credentials()
-        p_creds = admin_creds.get(provider_name, {})
 
-        client_id = p_creds.get("client_id", "").strip()
-        has_secret = bool(p_creds.get("client_secret_encrypted"))
-
-        if not client_id or not has_secret:
+        # Resolve credentials via priority chain
+        cred_resolver = CredentialResolver(self.db)
+        try:
+            creds = await cred_resolver.get_social(provider_name, redirect_uri)
+        except PravahException as exc:
             return {
                 "configured": False,
                 "provider": provider_name,
-                "message": f"OAuth credentials for {provider_name} have not been configured by the administrator.",
-                "authorization_url": None,
-                "state": None,
-            }
-
-        prov_res = await self.db.execute(select(SocialProvider).where(SocialProvider.name == provider_name))
-        prov = prov_res.scalar_one_or_none()
-        if prov and not prov.is_enabled:
-            return {
-                "configured": False,
-                "provider": provider_name,
-                "message": f"{provider_name.capitalize()} integration is currently disabled by the administrator.",
+                "message": exc.detail,
                 "authorization_url": None,
                 "state": None,
             }
@@ -291,8 +286,8 @@ class SocialService:
 
         import urllib.parse
         params = {
-            "client_id": client_id,
-            "redirect_uri": redirect_uri,
+            "client_id": creds.client_id,
+            "redirect_uri": creds.redirect_uri or redirect_uri,
             "response_type": "code",
             "scope": " ".join(oauth_config["scopes"]),
             "state": state,
@@ -310,6 +305,7 @@ class SocialService:
             "authorization_url": full_url,
             "state": state,
             "scopes": oauth_config["scopes"],
+            "credential_source": creds.source,
         }
 
     async def exchange_oauth_code(
@@ -318,31 +314,23 @@ class SocialService:
         code: str,
         redirect_uri: str,
     ) -> Dict[str, Any]:
-        """Exchanges OAuth authorization code for real access + refresh tokens."""
+        """Exchanges OAuth authorization code for real access + refresh tokens. Uses DB->env chain."""
         if provider_name not in PROVIDER_OAUTH_CONFIG:
             raise PravahException(detail=f"Unsupported provider: {provider_name}", error_code="UNSUPPORTED_PROVIDER")
 
         oauth_config = PROVIDER_OAUTH_CONFIG[provider_name]
-        admin_creds = await self._get_admin_credentials()
-        p_creds = admin_creds.get(provider_name, {})
 
-        client_id = p_creds.get("client_id", "").strip()
-        client_secret_enc = p_creds.get("client_secret_encrypted", "")
+        # Resolve via priority chain
+        cred_resolver = CredentialResolver(self.db)
+        creds = await cred_resolver.get_social(provider_name, redirect_uri)  # raises if not configured
 
-        if not client_id or not client_secret_enc:
-            raise PravahException(
-                detail=f"OAuth credentials for {provider_name} not configured.",
-                error_code="PROVIDER_NOT_CONFIGURED"
-            )
-
-        client_secret = decrypt_string(client_secret_enc)
         token_url = oauth_config["token_url"]
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             try:
                 if provider_name == "x":
                     import base64
-                    basic = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+                    basic = base64.b64encode(f"{creds.client_id}:{creds.client_secret}".encode()).decode()
                     resp = await client.post(
                         token_url,
                         headers={
@@ -360,8 +348,8 @@ class SocialService:
                     resp = await client.post(
                         token_url,
                         data={
-                            "client_id": client_id,
-                            "client_secret": client_secret,
+                            "client_id": creds.client_id,
+                            "client_secret": creds.client_secret,
                             "code": code,
                             "redirect_uri": redirect_uri,
                             "grant_type": "authorization_code",
