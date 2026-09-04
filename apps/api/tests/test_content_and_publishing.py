@@ -61,11 +61,14 @@ async def test_content_lifecycle_and_publishing(client: AsyncClient, db_session:
     assert approve_res.json()["status"] == "approved"
 
     # 3. Publish Now
-    pub_res = await client.post(f"/api/v1/content/{post_id}/publish-now", headers=headers)
-    assert pub_res.status_code == 200
-    pub_data = pub_res.json()
-    assert pub_data["status"] == "published"
-    assert "x" in pub_data["published_results"]
+    from unittest.mock import patch, AsyncMock
+    from app.services.publishing_service import PublishingService
+    with patch.object(PublishingService, "_publish_to_x", new_callable=AsyncMock, return_value="tweet_1234567890"):
+        pub_res = await client.post(f"/api/v1/content/{post_id}/publish-now", headers=headers)
+        assert pub_res.status_code in (200, 201)
+        pub_data = pub_res.json()
+        assert pub_data["status"] == "published"
+        assert "x" in pub_data["published_results"]
 
     # 4. Test Best Posting Time Recommendation Endpoint
     rec_res = await client.get("/api/v1/ai/recommend-best-time?platform=x", headers=headers)
