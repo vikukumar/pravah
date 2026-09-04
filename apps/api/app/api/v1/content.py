@@ -1,12 +1,10 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import TenantContext, get_tenant_context, require_permission
+from app.api.deps import TenantContext, require_permission
 from app.core.database import get_db
 from app.schemas.content import (
-    CampaignCreate,
-    CampaignResponse,
     ContentApprovalRequest,
     ContentCreate,
     ContentResponse,

@@ -1,22 +1,17 @@
-import hashlib
-import hmac
-import json
 import secrets
-import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlencode
 import httpx
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.core.config import settings
-from app.core.encryption import decrypt_secret, encrypt_secret, decrypt_string, encrypt_string
-from app.core.exceptions import ConflictException, NotFoundException, PravahException
+from app.core.encryption import encrypt_secret
+from app.core.exceptions import NotFoundException, PravahException
 from app.services.credential_resolver import CredentialResolver
 from app.models.social import (
     SocialAccount,
     SocialPage,
-    SocialProfile,
     SocialProfileSummary,
     SocialProvider,
     SocialToken,
@@ -106,16 +101,6 @@ class SocialService:
                 sp = SocialProvider(**prov, is_enabled=False)
                 self.db.add(sp)
         await self.db.commit()
-
-    async def _get_admin_credentials(self) -> Dict[str, Any]:
-        """Fetch admin-configured social OAuth credentials from SystemSetting."""
-        res = await self.db.execute(
-            select(SystemSetting).where(SystemSetting.key == "social_oauth_credentials")
-        )
-        setting = res.scalar_one_or_none()
-        if not setting or not setting.value:
-            return {}
-        return setting.value if isinstance(setting.value, dict) else {}
 
     async def list_providers(self) -> List[SocialProvider]:
         """Returns all provider definitions for admin view."""
@@ -284,7 +269,6 @@ class SocialService:
 
         state = await self.generate_oauth_state(provider_name, org_id, user_id, redirect_uri)
 
-        import urllib.parse
         params = {
             "client_id": creds.client_id,
             "redirect_uri": creds.redirect_uri or redirect_uri,
@@ -297,7 +281,7 @@ class SocialService:
             params["access_type"] = oauth_config.get("access_type", "offline")
             params["prompt"] = oauth_config.get("prompt", "consent")
 
-        full_url = f"{oauth_config['auth_url']}?{urllib.parse.urlencode(params)}"
+        full_url = f"{oauth_config['auth_url']}?{urlencode(params)}"
 
         return {
             "configured": True,

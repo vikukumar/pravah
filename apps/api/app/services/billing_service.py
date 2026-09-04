@@ -2,19 +2,17 @@ import hashlib
 import hmac
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import httpx
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.config import settings
-from app.core.exceptions import ConflictException, NotFoundException, PravahException
+from app.core.exceptions import NotFoundException, PravahException
 from app.services.credential_resolver import CredentialResolver
 from app.models.ai import AIUsage
 from app.models.billing import (
     Payment,
-    PaymentTransaction,
-    PaymentWebhook,
     Plan,
     PlanFeature,
     Subscription,

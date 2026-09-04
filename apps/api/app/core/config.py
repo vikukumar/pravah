@@ -1,6 +1,4 @@
-import os
 from typing import List, Optional
-from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):

@@ -5,7 +5,6 @@ Implements PRD §52, §105 — complete workflow persistence including
 versioning, variables, secret references, templates, and run locks.
 """
 
-import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship

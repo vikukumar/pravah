@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_active_super_admin
@@ -10,7 +10,6 @@ from app.models.user import User
 from app.schemas.admin import (
     AdminMetricsResponse,
     AuditLogResponse,
-    FeatureFlagUpdate,
     SystemSettingUpdate,
 )
 from app.services.admin_service import AdminService
@@ -361,7 +360,6 @@ async def get_admin_social_credentials(
     admin: User = Depends(get_current_active_super_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    from app.core.encryption import decrypt_string
     admin_svc = AdminService(db)
     settings_dict = await admin_svc.get_system_settings(public_only=False)
     creds = settings_dict.get("social_oauth_credentials", {})

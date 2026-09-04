@@ -8,14 +8,13 @@ These override the platform-level admin defaults in the resolution chain:
 
 All API keys are AES-256 encrypted at rest. The API never returns the raw key.
 """
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from typing import Any, Dict, List
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import TenantContext, require_permission, get_db
 from app.core.encryption import decrypt_string, encrypt_string
-from app.core.exceptions import PravahException
 from app.models.ai import AIProvider
 from app.models.system import AuditLog
 from app.services.ai_service import AIService, PROVIDER_CATALOG
