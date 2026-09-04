@@ -1,21 +1,19 @@
-from typing import AsyncGenerator, Callable, List, Optional
-from fastapi import Cookie, Depends, Header, HTTPException, Request, status
+from typing import Callable, List, Optional
+from fastapi import Cookie, Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import (
     ForbiddenException,
     NotFoundException,
-    PlanLimitExceededException,
     UnauthorizedException,
 )
 from app.core.security import decode_token
-from app.models.billing import Plan, PlanFeature, Subscription
-from app.models.organisation import Organisation, OrganisationMember, Role, RolePermission, Permission
-from app.models.user import User, Session
+from app.models.billing import Plan, Subscription
+from app.models.organisation import Organisation, OrganisationMember, Role, RolePermission
+from app.models.user import User
 
 security_bearer = HTTPBearer(auto_error=False)
 

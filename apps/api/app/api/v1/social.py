@@ -1,18 +1,16 @@
 import logging
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import RedirectResponse, HTMLResponse
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import TenantContext, get_current_user, get_db, get_tenant_context, require_permission
+from app.api.deps import TenantContext, get_db, get_tenant_context, require_permission
 from app.core.config import settings
 from app.schemas.social import (
     SocialAccountResponse,
-    SocialPageResponse,
     SocialProfileSummaryResponse,
     SocialProviderResponse,
 )
 from app.services.social_service import SocialService
-from app.models.user import User
 
 logger = logging.getLogger("pravah.social")
 

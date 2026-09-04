@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
-from app.models.content import Content, ContentSchedule
+from app.models.content import ContentSchedule
 from app.services.publishing_service import PublishingService
 
 logger = logging.getLogger("pravah.scheduler")

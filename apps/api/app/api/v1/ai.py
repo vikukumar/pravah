@@ -1,5 +1,4 @@
-from typing import Any, Dict, List
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import TenantContext, get_tenant_context, require_permission
 from app.core.database import get_db
@@ -8,8 +7,6 @@ from app.schemas.ai import (
     AIGenerateImageResponse,
     AIGenerateTextRequest,
     AIGenerateTextResponse,
-    AIProviderResponse,
-    AIUsageResponse,
 )
 from app.schemas.content import BestTimeRecommendationResponse
 from app.services.ai_service import AIService

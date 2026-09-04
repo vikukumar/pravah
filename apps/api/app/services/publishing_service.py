@@ -1,16 +1,15 @@
 import logging
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.encryption import decrypt_secret
 from app.core.exceptions import PravahException
 from app.models.content import Content, ContentSchedule
 from app.models.organisation import Organisation
-from app.models.social import SocialAccount, SocialPage, SocialToken
+from app.models.social import SocialAccount
 from app.models.system import AuditLog, Notification
 from app.models.user import User
 

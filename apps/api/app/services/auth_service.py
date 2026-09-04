@@ -1,7 +1,4 @@
-import io
-import json
 import pyotp
-import qrcode
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import delete, select, update
@@ -9,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.encryption import decrypt_secret, encrypt_secret
-from app.core.exceptions import ConflictException, NotFoundException, PravahException, UnauthorizedException
+from app.core.exceptions import ConflictException, NotFoundException, UnauthorizedException
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -19,7 +16,6 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
-from app.models.organisation import Organisation, OrganisationMember, Role, RolePermission, Permission
 from app.models.system import AuditLog, NotificationPreference
 from app.models.user import (
     OTP,

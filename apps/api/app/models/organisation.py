@@ -1,4 +1,3 @@
-import uuid
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, JSON, String, Text
 from sqlalchemy.orm import relationship
 from app.core.database import BaseModel

@@ -1,15 +1,13 @@
-from typing import Any, Dict, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.api.deps import TenantContext, get_current_user, get_tenant_context, require_permission
+from app.api.deps import TenantContext, require_permission
 from app.core.database import get_db
-from app.models.billing import Plan, Subscription
-from app.models.user import User
+from app.models.billing import Subscription
 from app.schemas.billing import (
     CashfreeOrderCreateRequest,
-    CashfreeVerifyRequest,
     PlanFeatureSchema,
     PlanResponse,
     RazorpayOrderCreateRequest,

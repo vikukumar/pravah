@@ -1,20 +1,13 @@
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from typing import Any, Dict, List
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-from app.api.deps import get_current_active_super_admin
 from app.core.database import get_db
-from app.models.cms import CMSBlock, CMSPage, Form, Menu, SEOConfiguration
-from app.models.user import User
+from app.models.cms import Menu
 from app.schemas.cms import (
     CMSBlockSchema,
-    CMSPageCreate,
     CMSPageResponse,
-    CMSPageUpdate,
-    FormResponse,
     FormSubmitRequest,
-    MenuResponse,
     SEOSchema,
 )
 from app.services.cms_service import CMSService

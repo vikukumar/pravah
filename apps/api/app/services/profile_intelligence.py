@@ -22,10 +22,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.social import SocialAccount, SocialProfileSummary, SocialToken
+from app.models.social import SocialAccount, SocialProfileSummary
 from app.core.encryption import decrypt_secret
 
 logger = logging.getLogger("pravah.profile_intelligence")

@@ -1,15 +1,9 @@
-import json
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import httpx
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-from app.core.config import settings
-from app.core.encryption import decrypt_string, encrypt_string
 from app.core.exceptions import PravahException
-from app.models.ai import AIModel, AIProvider, AIUsage
+from app.models.ai import AIUsage
 from app.models.content import ContentAsset
 from app.models.organisation import Organisation
 from app.models.user import User

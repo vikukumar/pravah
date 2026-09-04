@@ -13,15 +13,15 @@ Implements PRD §52 full workflow management API including:
 
 import asyncio
 import json
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import TenantContext, get_tenant_context, require_permission
+from app.api.deps import TenantContext, require_permission
 from app.core.database import get_db
 from app.core.exceptions import NotFoundException
 from app.models.workflow import (
@@ -29,10 +29,8 @@ from app.models.workflow import (
     WorkflowEdge,
     WorkflowExecution,
     WorkflowNode,
-    WorkflowNodeExecution,
     WorkflowTemplate,
     WorkflowVersion,
-    WorkflowVariable,
 )
 from app.schemas.workflow import (
     WorkflowCreate,

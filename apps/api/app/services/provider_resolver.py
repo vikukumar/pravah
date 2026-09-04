@@ -20,15 +20,15 @@ uses directly without needing to know which provider was selected.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.encryption import decrypt_string
 from app.core.exceptions import PravahException
-from app.models.ai import AIProvider, AIModel
+from app.models.ai import AIProvider
 from app.models.system import SystemSetting
 
 logger = logging.getLogger("pravah.provider_resolver")

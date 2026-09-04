@@ -1,12 +1,11 @@
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import TenantContext, get_tenant_context, require_permission
+from app.api.deps import TenantContext, require_permission
 from app.core.database import get_db
 from app.models.system import AuditLog
-import uuid
-from datetime import datetime, timezone
 
 router = APIRouter()
 
