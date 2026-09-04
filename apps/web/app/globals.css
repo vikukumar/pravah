@@ -74,3 +74,24 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Flowise-style canvas customizations - completely hide any canvas attribution/branding */
+.react-flow__attribution {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Custom styled handles for connection points */
+.react-flow__handle {
+  width: 10px !important;
+  height: 10px !important;
+  border-width: 2px !important;
+  border-radius: 9999px !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.react-flow__handle:hover {
+  transform: scale(1.35);
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.8);
+}
