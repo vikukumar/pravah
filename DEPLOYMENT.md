@@ -77,16 +77,27 @@ docker compose -f docker-compose.prod.yml ps
 ### Topology 3: Kubernetes Deployment via Helm 3 Chart (`deploy/helm/pravah`)
 > **Best for:** Scalable Kubernetes clusters (EKS, GKE, AKS, k3s, or bare-metal k8s).
 
-Install directly from the GHCR OCI registry or local chart:
+Install directly using our GitHub-hosted Helm repository or release archive URL:
 
 ```bash
-# 1. Install or upgrade via official OCI chart
-helm upgrade --install pravah oci://ghcr.io/vikukumar/charts/pravah \
-  --version 1.0.0 \
+# Method 1: Add Helm Repository via GitHub URL
+helm repo add pravah https://raw.githubusercontent.com/vikukumar/pravah/gh-pages/
+# (or if GitHub Pages is active: helm repo add pravah https://vikukumar.github.io/pravah/)
+helm repo update
+
+# Install or upgrade
+helm upgrade --install pravah pravah/pravah \
+  --version 1.0.1 \
   --namespace pravah --create-namespace \
   -f deploy/helm/pravah/values.yaml
 
-# 2. Verify all workloads (API, Web, Scheduler, Ingress, PVC)
+# Method 2: Direct Install from GitHub Release URL
+helm upgrade --install pravah \
+  https://github.com/vikukumar/pravah/releases/download/v1.0.1/pravah-1.0.1.tgz \
+  --namespace pravah --create-namespace \
+  -f deploy/helm/pravah/values.yaml
+
+# Verify all workloads (API, Web, Scheduler, Ingress, PVC)
 kubectl get pods,svc,pvc,ingress -n pravah
 ```
 

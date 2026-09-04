@@ -169,8 +169,8 @@ jobs:
         with:
           version: 'v3.14.0'
 
-      # 14. Package & Publish Helm Chart to GHCR OCI Registry
-      - name: Package & Publish Helm Chart
+      # 14. Package Helm Chart
+      - name: Package Helm Chart
         run: |
           # Sync chart version and appVersion
           sed -i 's/^version: .*/version: '${{ steps.semver.outputs.version }}'/' deploy/helm/pravah/Chart.yaml
@@ -186,10 +186,6 @@ jobs:
           if [ -f "$CHART_TGZ" ]; then
             # Append SHA256 checksum to SHA256SUMS.txt
             sha256sum "$CHART_TGZ" | awk '{print $1 "  pravah-'${{ steps.semver.outputs.version }}'.tgz"}' >> dist/SHA256SUMS.txt
-            
-            # Authenticate and publish to GHCR OCI charts registry
-            echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
-            helm push "$CHART_TGZ" "oci://ghcr.io/${{ github.repository_owner }}/charts"
           fi
 
       # 15. Commit updated version files and push Git Tag
@@ -239,3 +235,47 @@ jobs:
             --title "PRAVAH ${{ steps.semver.outputs.tag_name }}" \
             --notes-file "dist/RELEASE_NOTES.md" \
             $FLAGS
+
+      # 17. Publish Helm Chart to GitHub Repository (gh-pages)
+      - name: Publish Helm Chart to GitHub Helm Repository
+        run: |
+          echo "📦 Publishing Helm Chart to GitHub repository (gh-pages branch)..."
+          PAGES_DIR="$(mktemp -d)"
+
+          # Clone gh-pages branch if it exists, otherwise initialize orphan branch
+          if git clone --depth 1 --branch gh-pages "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" "$PAGES_DIR" 2>/dev/null; then
+            echo "Found existing gh-pages branch."
+          else
+            echo "Initializing orphan gh-pages branch for Helm repository..."
+            mkdir -p "$PAGES_DIR"
+            cd "$PAGES_DIR"
+            git init
+            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            git checkout --orphan gh-pages
+            cd -
+          fi
+
+          # Copy packaged chart archive into gh-pages directory
+          cp "dist/pravah-${{ steps.semver.outputs.version }}.tgz" "$PAGES_DIR/"
+
+          # Generate / update index.yaml (merge with existing so past versions are preserved)
+          if [ -f "$PAGES_DIR/index.yaml" ]; then
+            helm repo index "$PAGES_DIR" --merge "$PAGES_DIR/index.yaml"
+          else
+            helm repo index "$PAGES_DIR"
+          fi
+
+          # Commit and push index.yaml and chart package to gh-pages branch
+          cd "$PAGES_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.yaml "pravah-${{ steps.semver.outputs.version }}.tgz"
+          if git diff --staged --quiet; then
+            echo "No changes to commit on gh-pages."
+          else
+            git commit -m "chore(helm): release chart v${{ steps.semver.outputs.version }} [skip ci]"
+            git push origin gh-pages
+          fi
+          cd -
+          rm -rf "$PAGES_DIR"
+          echo "✅ Helm chart repository successfully published to gh-pages branch."
