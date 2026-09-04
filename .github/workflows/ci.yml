@@ -1,0 +1,114 @@
+name: Continuous Integration & Verification
+
+on:
+  push:
+    branches-ignore:
+      - 'gh-pages'
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-checks:
+    name: Backend Tests & Linting
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: apps/api/requirements.txt
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/api/requirements.txt
+
+      - name: Run Backend Pytest Suite
+        run: |
+          cd apps/api
+          pytest -v
+
+  frontend-checks:
+    name: Frontend TypeScript & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd apps/web
+          npm ci
+
+      - name: Run TypeScript Type Check
+        run: |
+          cd apps/web
+          npx tsc --noEmit
+
+      - name: Build Next.js Production Bundle
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+          NODE_ENV: production
+        run: |
+          cd apps/web
+          npm run build
+
+  packaging-security-checks:
+    name: Release Packaging & Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository with Tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify Version Resolution (Dry Run)
+        run: |
+          python scripts/release_version.py --dry-run
+
+      - name: Test Release Packaging & Security Audit
+        run: |
+          python scripts/package_release.py --version 1.0.0 --output-dir dist
+          
+          # Assert ZIP archive exists and is non-empty
+          if [ ! -f "dist/pravah-v1.0.0.zip" ]; then
+            echo "Error: Release ZIP was not created!"
+            exit 1
+          fi
+
+          if [ ! -f "dist/SHA256SUMS.txt" ]; then
+            echo "Error: SHA256 checksums file was not created!"
+            exit 1
+          fi
+          
+          echo "✓ Packaging and security audit passed cleanly!"
