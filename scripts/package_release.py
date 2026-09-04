@@ -211,6 +211,12 @@ def package_release(version: str, output_dir: Path) -> Path:
         root_files_to_copy = [
             "start.sh",
             "start.ps1",
+            "stop.sh",
+            "stop.ps1",
+            "restart.sh",
+            "restart.ps1",
+            "update.sh",
+            "update.ps1",
             "docker-run.sh",
             "docker-run.ps1",
             "docker-compose.yml",
