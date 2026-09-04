@@ -455,7 +455,7 @@ async def save_admin_cms_page(
     admin: User = Depends(get_current_active_super_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    from app.models.cms import CMSPage, CMSBlock, SEOConfiguration
+    from app.models.cms import CMSPage
     slug = payload.get("slug", "").lower().strip()
     title = payload.get("title", "").strip()
 
