@@ -22,7 +22,7 @@
  */
 
 import React, {
-  useCallback, useEffect, useMemo, useRef, useState,
+  useCallback, useEffect, useMemo, useRef, useState, createContext, useContext,
 } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -199,10 +199,32 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// Node Actions Context (Decoupled from Node Data to Prevent Stale Closures & Render Cascades)
+// ─────────────────────────────────────────────────────────────────────
+
+interface NodeActionsContextType {
+  updateNodeConfig: (nodeId: string, newConfig: Record<string, any>) => void;
+  deleteNode: (nodeId: string) => void;
+  duplicateNode: (nodeId: string) => void;
+  openInspector: (nodeId: string) => void;
+}
+
+const NodeActionsContext = createContext<NodeActionsContextType>({
+  updateNodeConfig: () => {},
+  deleteNode: () => {},
+  duplicateNode: () => {},
+  openInspector: () => {},
+});
+
+const useNodeActions = () => useContext(NodeActionsContext);
+
+// ─────────────────────────────────────────────────────────────────────
 // Flowise-Grade Interactive Node Component
 // ─────────────────────────────────────────────────────────────────────
 
 function FlowiseNode({ id, data, selected }: any) {
+  const { openInspector, duplicateNode, deleteNode, updateNodeConfig } = useNodeActions();
+
   const cat = data.category || "utility";
   const styles = CATEGORY_STYLES[cat] || CATEGORY_STYLES.utility;
   const execStatus = data._execStatus;
@@ -264,42 +286,36 @@ function FlowiseNode({ id, data, selected }: any) {
 
         {/* Action icons on node header */}
         <div className="flex items-center gap-0.5 nodrag">
-          {data.onOpenInspector && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                data.onOpenInspector(id);
-              }}
-              title="Configure tool options"
-              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-            </button>
-          )}
-          {data.onDuplicate && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                data.onDuplicate(id);
-              }}
-              title="Duplicate node"
-              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
-            >
-              <Copy className="w-3.5 h-3.5" />
-            </button>
-          )}
-          {data.onDelete && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                data.onDelete(id);
-              }}
-              title="Remove node"
-              className="p-1 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              openInspector(id);
+            }}
+            title="Configure tool options"
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              duplicateNode(id);
+            }}
+            title="Duplicate node"
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+          >
+            <Copy className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteNode(id);
+            }}
+            title="Remove node"
+            className="p-1 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
@@ -331,7 +347,7 @@ function FlowiseNode({ id, data, selected }: any) {
             </label>
             <select
               value={config[f.key] ?? f.default ?? ""}
-              onChange={(e) => data.onUpdateConfig?.(id, { [f.key]: e.target.value })}
+              onChange={(e) => updateNodeConfig(id, { [f.key]: e.target.value })}
               className="w-full bg-slate-950 border border-slate-700 hover:border-slate-600 focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none transition-colors"
             >
               {f.options?.map((opt: any) => (
@@ -353,7 +369,7 @@ function FlowiseNode({ id, data, selected }: any) {
             <input
               type="text"
               value={config[inlineTextField.key] ?? inlineTextField.default ?? ""}
-              onChange={(e) => data.onUpdateConfig?.(id, { [inlineTextField.key]: e.target.value })}
+              onChange={(e) => updateNodeConfig(id, { [inlineTextField.key]: e.target.value })}
               placeholder={inlineTextField.placeholder || `Enter ${inlineTextField.label.toLowerCase()}...`}
               className="w-full bg-slate-950 border border-slate-700 hover:border-slate-600 focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none font-mono transition-colors placeholder:text-slate-600"
             />
@@ -370,7 +386,7 @@ function FlowiseNode({ id, data, selected }: any) {
             <textarea
               rows={2}
               value={config[inlineTextarea.key] ?? inlineTextarea.default ?? ""}
-              onChange={(e) => data.onUpdateConfig?.(id, { [inlineTextarea.key]: e.target.value })}
+              onChange={(e) => updateNodeConfig(id, { [inlineTextarea.key]: e.target.value })}
               placeholder={inlineTextarea.placeholder || "Enter prompt template or text..."}
               className="w-full bg-slate-950 border border-slate-700 hover:border-slate-600 focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none font-mono transition-colors resize-none placeholder:text-slate-600 leading-snug"
             />
@@ -379,7 +395,7 @@ function FlowiseNode({ id, data, selected }: any) {
 
         {/* Expand / Options Drawer Trigger */}
         <button
-          onClick={() => data.onOpenInspector?.(id)}
+          onClick={() => openInspector(id)}
           className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-[11px] text-slate-300 border border-slate-700/60 hover:border-slate-600 transition-all group nodrag"
         >
           <span className="flex items-center gap-1.5">
@@ -532,13 +548,23 @@ function WorkflowBuilderInner() {
     setSelectedNodeId(nodeId);
   }, []);
 
+  const nodeActions = useMemo(
+    () => ({
+      updateNodeConfig,
+      deleteNode,
+      duplicateNode,
+      openInspector,
+    }),
+    [updateNodeConfig, deleteNode, duplicateNode, openInspector]
+  );
+
   // Define nodeTypes memoized
   const nodeTypes = useMemo(() => ({
     flowiseNode: FlowiseNode,
     pravahNode: FlowiseNode, // backward compatible with existing saved data
   }), []);
 
-  // ── Load workflow + node registry ──
+  // ── Load workflow + node registry (ONLY re-runs if workflowId changes) ──
   useEffect(() => {
     if (!workflowId) return;
     Promise.all([
@@ -572,10 +598,6 @@ function WorkflowBuilderInner() {
                 icon: n.icon || nodeDef?.icon,
                 color: n.color || nodeDef?.color,
                 nodeDef: nodeDef,
-                onUpdateConfig: updateNodeConfig,
-                onDelete: deleteNode,
-                onDuplicate: duplicateNode,
-                onOpenInspector: openInspector,
               },
             };
           })
@@ -595,23 +617,7 @@ function WorkflowBuilderInner() {
       })
       .catch(() => toast.error("Failed to load workflow"))
       .finally(() => setLoading(false));
-  }, [workflowId, updateNodeConfig, deleteNode, duplicateNode, openInspector, toast]);
-
-  // Keep node callbacks fresh in node data
-  useEffect(() => {
-    setNodes((nds) =>
-      nds.map((n) => ({
-        ...n,
-        data: {
-          ...n.data,
-          onUpdateConfig: updateNodeConfig,
-          onDelete: deleteNode,
-          onDuplicate: duplicateNode,
-          onOpenInspector: openInspector,
-        },
-      }))
-    );
-  }, [updateNodeConfig, deleteNode, duplicateNode, openInspector]);
+  }, [workflowId]);
 
   // ── ReactFlow event handlers ──
   const onNodesChange = useCallback(
@@ -644,46 +650,45 @@ function WorkflowBuilderInner() {
   }, []);
 
   // ── Add Node by Def (from click or drag) ──
-  const addNodeToCanvas = useCallback((nodeDef: any, targetPos?: { x: number; y: number }) => {
-    const newId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    const position = targetPos || {
-      x: 250 + Math.random() * 80,
-      y: 180 + Math.random() * 80,
-    };
+  const addNodeToCanvas = useCallback(
+    (nodeDef: any, targetPos?: { x: number; y: number }) => {
+      const newId = `node_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const position = targetPos || {
+        x: 250 + Math.random() * 80,
+        y: 180 + Math.random() * 80,
+      };
 
-    // Construct default initial config based on schema
-    const initialConfig: Record<string, any> = {};
-    for (const f of nodeDef.config_schema || []) {
-      if (f.default !== undefined) {
-        initialConfig[f.key] = f.default;
+      // Construct default initial config based on schema
+      const initialConfig: Record<string, any> = {};
+      for (const f of nodeDef.config_schema || []) {
+        if (f.default !== undefined) {
+          initialConfig[f.key] = f.default;
+        }
       }
-    }
 
-    const newNode: Node = {
-      id: newId,
-      type: "flowiseNode",
-      position,
-      data: {
+      const newNode: Node = {
         id: newId,
-        name: nodeDef.name,
-        label: nodeDef.name,
-        type: nodeDef.id,
-        category: nodeDef.category,
-        config: initialConfig,
-        icon: nodeDef.icon,
-        color: nodeDef.color,
-        nodeDef: nodeDef,
-        onUpdateConfig: updateNodeConfig,
-        onDelete: deleteNode,
-        onDuplicate: duplicateNode,
-        onOpenInspector: openInspector,
-      },
-    };
+        type: "flowiseNode",
+        position,
+        data: {
+          id: newId,
+          name: nodeDef.name,
+          label: nodeDef.name,
+          type: nodeDef.id,
+          category: nodeDef.category || "utility",
+          config: initialConfig,
+          icon: nodeDef.icon,
+          color: nodeDef.color,
+          nodeDef: nodeDef,
+        },
+      };
 
-    setNodes((nds) => [...nds, newNode]);
-    setSelectedNodeId(newId);
-    toast.success(`Added ${nodeDef.name}`);
-  }, [updateNodeConfig, deleteNode, duplicateNode, openInspector, toast]);
+      setNodes((nds) => [...nds, newNode]);
+      setSelectedNodeId(newId);
+      toast.success(`Added ${nodeDef.name}`);
+    },
+    [toast]
+  );
 
   // Drag & drop onto canvas
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -726,18 +731,24 @@ function WorkflowBuilderInner() {
     setSaving(true);
     try {
       const payload = {
-        name: wfName,
-        nodes: nodes.map((n) => ({
-          id: n.id,
-          type: n.data.type,
-          name: n.data.name,
-          label: n.data.label,
-          category: n.data.category,
-          config: n.data.config || {},
-          position: n.position,
-          icon: n.data.icon,
-          color: n.data.color,
-        })),
+        name: wfName || "Untitled Workflow",
+        nodes: nodes.map((n) => {
+          const d = (n.data || {}) as any;
+          return {
+            id: n.id,
+            type: d.type || (n.type === "flowiseNode" ? "utility" : n.type) || "utility",
+            name: d.name || d.label || "Node",
+            label: d.label || d.name || "Node",
+            category: d.category || "utility",
+            config: d.config || {},
+            position: {
+              x: Number(n.position?.x) || 100,
+              y: Number(n.position?.y) || 100,
+            },
+            icon: d.icon || null,
+            color: d.color || null,
+          };
+        }),
         edges: edges.map((e) => ({
           id: e.id,
           source: e.source,
@@ -753,6 +764,7 @@ function WorkflowBuilderInner() {
       toast.success("Workflow saved");
     } catch (e: any) {
       toast.error(e.message || "Save failed");
+      throw e;
     } finally {
       setSaving(false);
     }
@@ -761,6 +773,7 @@ function WorkflowBuilderInner() {
   // ── Validate Workflow ──
   async function handleValidate() {
     try {
+      await handleSave();
       const result = (await fetchApi(`/workflows/${workflowId}/validate`, {
         method: "POST",
       })) as any;
@@ -805,6 +818,7 @@ function WorkflowBuilderInner() {
     setBottomTab("logs");
     setBottomOpen(true);
     try {
+      await handleSave();
       const result = (await fetchApi(`/workflows/${workflowId}/execute`, {
         method: "POST",
         body: JSON.stringify({ trigger_source: "manual", trigger_payload: {} }),
@@ -883,7 +897,8 @@ function WorkflowBuilderInner() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none">
+    <NodeActionsContext.Provider value={nodeActions}>
+      <div className="h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none">
       {/* ─────────────────────────────────────────────────────────────
           Top Navigation & Actions Bar
          ───────────────────────────────────────────────────────────── */}
@@ -1609,7 +1624,8 @@ function WorkflowBuilderInner() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </NodeActionsContext.Provider>
   );
 }
 
