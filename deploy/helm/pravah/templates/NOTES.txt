@@ -1,0 +1,37 @@
+==============================================================================
+🎉 PRAVAH Enterprise AI Automation Platform successfully deployed!
+==============================================================================
+
+Release Name: {{ .Release.Name }}
+Namespace:    {{ .Release.Namespace }}
+Version:      {{ .Chart.AppVersion }}
+
+1. Get the Application Ingress URL:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  👉 Platform Web App:  https://{{ .host }}
+  👉 First-Run Setup:   https://{{ .host }}/setup
+  👉 OpenAPI Swagger:   https://{{ .host }}/api/v1/docs
+{{- end }}
+{{- else if contains "NodePort" .Values.web.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "pravah.fullname" . }}-web)
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "ClusterIP" .Values.web.service.type }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "pravah.fullname" . }}-web 3000:3000 &
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "pravah.fullname" . }}-api 8000:8000 &
+  echo "👉 Web App:  http://127.0.0.1:3000"
+  echo "👉 API Docs: http://127.0.0.1:8000/api/v1/docs"
+{{- end }}
+
+2. Verify Pod Health:
+  kubectl get pods --namespace {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+3. Check Persistent Uploads Storage:
+  kubectl get pvc --namespace {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+4. Super Administrator Initial Setup:
+  Navigate to https://<host>/setup to initialize your Super Admin credentials,
+  configure default organizations, and seed system permissions.
+
+==============================================================================

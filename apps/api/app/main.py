@@ -120,5 +120,7 @@ async def readiness_check():
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 # Mount local media uploads
-if os.path.exists(settings.STORAGE_LOCAL_PATH):
-    app.mount("/api/v1/media", StaticFiles(directory=settings.STORAGE_LOCAL_PATH), name="media")
+_upload_path = Path(settings.STORAGE_LOCAL_PATH)
+_upload_path.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_upload_path)), name="uploads")
+app.mount("/api/v1/media", StaticFiles(directory=str(_upload_path)), name="media")

@@ -1,0 +1,167 @@
+# ==============================================================================
+# PRAVAH — STANDALONE APPLICATION STACK (FRONTEND & BACKEND ONLY)
+# Production-grade compose for external/host PostgreSQL & Redis
+# Reads configuration from .env and persists uploads/content across upgrades
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # FastAPI Backend Service
+  # ----------------------------------------------------------------------------
+  api:
+    image: ${API_IMAGE:-ghcr.io/vikukumar/pravah-api:${PRAVAH_VERSION:-latest}}
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: pravah-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - STORAGE_TYPE=${STORAGE_TYPE:-local}
+      - STORAGE_LOCAL_PATH=/app/uploads
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://pravah_user:pravah_secure_prod_password@host.docker.internal:5432/pravah_prod_db}
+      - DATABASE_SYNC_URL=${DATABASE_SYNC_URL:-postgresql://pravah_user:pravah_secure_prod_password@host.docker.internal:5432/pravah_prod_db}
+      - REDIS_URL=${REDIS_URL:-redis://host.docker.internal:6379/0}
+      - PORT=8000
+    extra_hosts:
+      # Allows containers to connect directly to PostgreSQL & Redis on the host machine
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      # Persistent volume for media, uploaded files, and AI-generated content assets
+      - pravah_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2048M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    networks:
+      - pravah_network
+
+  # ----------------------------------------------------------------------------
+  # Next.js Web Frontend Service
+  # ----------------------------------------------------------------------------
+  web:
+    image: ${WEB_IMAGE:-ghcr.io/vikukumar/pravah-web:${PRAVAH_VERSION:-latest}}
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.web
+    container_name: pravah-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2048M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    networks:
+      - pravah_network
+
+  # ----------------------------------------------------------------------------
+  # Background Scheduler & Automation Worker Service
+  # ----------------------------------------------------------------------------
+  scheduler:
+    image: ${API_IMAGE:-ghcr.io/vikukumar/pravah-api:${PRAVAH_VERSION:-latest}}
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: pravah-scheduler
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.scheduler"]
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - STORAGE_TYPE=${STORAGE_TYPE:-local}
+      - STORAGE_LOCAL_PATH=/app/uploads
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://pravah_user:pravah_secure_prod_password@host.docker.internal:5432/pravah_prod_db}
+      - DATABASE_SYNC_URL=${DATABASE_SYNC_URL:-postgresql://pravah_user:pravah_secure_prod_password@host.docker.internal:5432/pravah_prod_db}
+      - REDIS_URL=${REDIS_URL:-redis://host.docker.internal:6379/0}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - pravah_uploads:/app/uploads
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1024M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+    networks:
+      - pravah_network
+
+# ------------------------------------------------------------------------------
+# Persistent Storage Volumes (Preserved across redeployments and upgrades)
+# ------------------------------------------------------------------------------
+volumes:
+  pravah_uploads:
+    name: pravah_app_uploads
+    driver: local
+
+# ------------------------------------------------------------------------------
+# Network Definition
+# ------------------------------------------------------------------------------
+networks:
+  pravah_network:
+    name: pravah_app_net
+    driver: bridge

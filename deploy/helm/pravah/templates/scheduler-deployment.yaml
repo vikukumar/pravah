@@ -1,0 +1,60 @@
+{{- if .Values.scheduler.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pravah.fullname" . }}-scheduler
+  labels:
+    {{- include "pravah.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+spec:
+  replicas: {{ .Values.scheduler.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "pravah.schedulerSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pravah.schedulerSelectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.scheduler.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "pravah.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.scheduler.podSecurityContext | nindent 8 }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: scheduler
+          image: {{ include "pravah.apiImage" . | quote }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command:
+            - python
+            - -m
+            - app.workers.scheduler
+          securityContext:
+            {{- toYaml .Values.scheduler.securityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "pravah.fullname" . }}-config
+            - secretRef:
+                name: {{ include "pravah.fullname" . }}-secrets
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: uploads-volume
+              mountPath: {{ .Values.persistence.mountPath | default "/app/uploads" }}
+            {{- end }}
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: uploads-volume
+          persistentVolumeClaim:
+            claimName: {{ include "pravah.fullname" . }}-uploads
+        {{- end }}
+{{- end }}

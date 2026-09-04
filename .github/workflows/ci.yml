@@ -112,3 +112,26 @@ jobs:
           fi
           
           echo "✓ Packaging and security audit passed cleanly!"
+
+  helm-checks:
+    name: Helm Chart Lint & Template Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm CLI
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.0'
+
+      - name: Run Helm Lint
+        run: |
+          helm lint deploy/helm/pravah
+
+      - name: Run Helm Template Render Test
+        run: |
+          helm template test-release deploy/helm/pravah --debug
+

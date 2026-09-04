@@ -1,0 +1,30 @@
+apiVersion: v2
+name: pravah
+description: Enterprise AI Social Media Automation & Visual Workflow Platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - ai
+  - workflow
+  - automation
+  - social-media
+  - scheduler
+  - dag
+  - fastapi
+  - nextjs
+home: https://pravah.app
+sources:
+  - https://github.com/vikukumar/pravah
+maintainers:
+  - name: Pravah Core Team
+    email: support@pravah.app
+    url: https://github.com/vikukumar
+annotations:
+  artifacthub.io/license: MIT
+  artifacthub.io/category: integration-and-delivery
+  artifacthub.io/links: |
+    - name: Homepage
+      url: https://pravah.app
+    - name: Source
+      url: https://github.com/vikukumar/pravah

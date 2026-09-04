@@ -201,7 +201,12 @@ def package_release(version: str, output_dir: Path) -> Path:
             print("   -> Staging Infrastructure (infrastructure/)...")
             copy_directory_secure(ROOT_DIR / "infrastructure", staged / "infrastructure")
 
-        # 6. Root Startup & Container Files
+        # 6. Deploy & Helm Charts (deploy/ -> deploy/)
+        if (ROOT_DIR / "deploy").exists():
+            print("   -> Staging Helm & Kubernetes Manifests (deploy/)...")
+            copy_directory_secure(ROOT_DIR / "deploy", staged / "deploy")
+
+        # 7. Root Startup & Container Files
         print("   -> Staging Startup & Deployment Run scripts...")
         root_files_to_copy = [
             "start.sh",
@@ -209,6 +214,7 @@ def package_release(version: str, output_dir: Path) -> Path:
             "docker-run.sh",
             "docker-run.ps1",
             "docker-compose.yml",
+            "docker-compose.app.yml",
             "docker-compose.prod.yml",
             "Dockerfile",
             ".env.example",

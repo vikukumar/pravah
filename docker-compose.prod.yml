@@ -1,87 +1,280 @@
+# ==============================================================================
+# PRAVAH — FULL PRODUCTION ORCHESTRATION STACK
+# Complete deployment with Nginx Reverse Proxy, PostgreSQL 16, Redis 7,
+# FastAPI Backend, Background Scheduler Worker, and Next.js Web Frontend.
+# All data, uploads, and AI-generated contents are persistently volume-mounted.
+# ==============================================================================
+
 version: '3.8'
 
 services:
+  # ----------------------------------------------------------------------------
+  # Edge Nginx Reverse Proxy (SSL, Gzip, Rate Limiting & Security Headers)
+  # ----------------------------------------------------------------------------
   nginx:
-    image: nginx:alpine
+    image: nginx:1.25-alpine
     container_name: pravah-prod-nginx
-    restart: always
+    restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     volumes:
       - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ssl:/etc/nginx/ssl:ro
+      - pravah_uploads_data:/app/uploads:ro
     depends_on:
-      - web
-      - api
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:80/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - pravah_prod_network
 
+  # ----------------------------------------------------------------------------
+  # PostgreSQL 16 Relational Database Service
+  # ----------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
     container_name: pravah-prod-postgres
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pravah_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pravah_secure_prod_password}
       POSTGRES_DB: ${POSTGRES_DB:-pravah_prod_db}
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - postgres_prod_data:/var/lib/postgresql/data
+      - postgres_prod_data:/var/lib/postgresql/data/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pravah_user} -d ${POSTGRES_DB:-pravah_prod_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2048M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    networks:
+      - pravah_prod_network
 
+  # ----------------------------------------------------------------------------
+  # Redis 7 In-Memory Cache & Message Broker
+  # ----------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: pravah-prod-redis
-    restart: always
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis_prod_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+    networks:
+      - pravah_prod_network
 
+  # ----------------------------------------------------------------------------
+  # FastAPI Backend API Service
+  # ----------------------------------------------------------------------------
   api:
+    image: ${API_IMAGE:-ghcr.io/vikukumar/pravah-api:${PRAVAH_VERSION:-latest}}
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.api
     container_name: pravah-prod-api
-    restart: always
+    restart: unless-stopped
+    env_file:
+      - .env
     environment:
       - ENVIRONMENT=production
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
       - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
       - REDIS_URL=redis://redis:6379/0
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_PATH=/app/uploads
       - SECRET_KEY=${SECRET_KEY}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     volumes:
-      - uploads_prod_data:/app/uploads
+      # Persistent volume for user uploads, social media creatives & generated images
+      - pravah_uploads_data:/app/uploads
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2048M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    networks:
+      - pravah_prod_network
 
+  # ----------------------------------------------------------------------------
+  # Background Automation & Social Scheduling Worker
+  # ----------------------------------------------------------------------------
   scheduler:
+    image: ${API_IMAGE:-ghcr.io/vikukumar/pravah-api:${PRAVAH_VERSION:-latest}}
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.api
     container_name: pravah-prod-scheduler
-    restart: always
+    restart: unless-stopped
     command: ["python", "-m", "app.workers.scheduler"]
+    env_file:
+      - .env
     environment:
       - ENVIRONMENT=production
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
       - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
       - REDIS_URL=redis://redis:6379/0
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_PATH=/app/uploads
       - SECRET_KEY=${SECRET_KEY}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    volumes:
+      - pravah_uploads_data:/app/uploads
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1024M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+    networks:
+      - pravah_prod_network
 
+  # ----------------------------------------------------------------------------
+  # Next.js Web Frontend Service
+  # ----------------------------------------------------------------------------
   web:
+    image: ${WEB_IMAGE:-ghcr.io/vikukumar/pravah-web:${PRAVAH_VERSION:-latest}}
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.web
     container_name: pravah-prod-web
-    restart: always
+    restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - NEXT_PUBLIC_API_URL=http://api:8000/api/v1
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://api:8000/api/v1}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2048M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    networks:
+      - pravah_prod_network
 
+# ------------------------------------------------------------------------------
+# Persistent Storage Volumes
+# ------------------------------------------------------------------------------
 volumes:
   postgres_prod_data:
+    name: pravah_postgres_data
+    driver: local
   redis_prod_data:
-  uploads_prod_data:
+    name: pravah_redis_data
+    driver: local
+  pravah_uploads_data:
+    name: pravah_uploads_data
+    driver: local
+
+# ------------------------------------------------------------------------------
+# Isolated Network Stack
+# ------------------------------------------------------------------------------
+networks:
+  pravah_prod_network:
+    name: pravah_prod_network
+    driver: bridge

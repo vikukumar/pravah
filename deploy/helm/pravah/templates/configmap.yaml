@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pravah.fullname" . }}-config
+  labels:
+    {{- include "pravah.labels" . | nindent 4 }}
+data:
+  ENVIRONMENT: {{ .Values.config.environment | quote }}
+  APP_URL: {{ .Values.config.appUrl | quote }}
+  API_URL: {{ .Values.config.apiUrl | quote }}
+  NEXT_PUBLIC_API_URL: {{ .Values.config.apiUrl | quote }}
+  STORAGE_TYPE: {{ .Values.config.storageType | quote }}
+  STORAGE_LOCAL_PATH: {{ .Values.persistence.mountPath | quote }}
+  DATABASE_URL: {{ .Values.config.databaseUrl | quote }}
+  DATABASE_SYNC_URL: {{ .Values.config.databaseSyncUrl | quote }}
+  REDIS_URL: {{ .Values.config.redisUrl | quote }}
+  SMTP_HOST: {{ .Values.config.smtpHost | quote }}
+  SMTP_PORT: {{ .Values.config.smtpPort | quote }}
+  SMTP_FROM_EMAIL: {{ .Values.config.smtpFromEmail | quote }}
+  SMTP_FROM_NAME: {{ .Values.config.smtpFromName | quote }}
+  SMTP_TLS: {{ .Values.config.smtpTls | quote }}
+  NEXT_TELEMETRY_DISABLED: "1"
+  PORT: "3000"
