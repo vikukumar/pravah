@@ -248,17 +248,46 @@ class WorkflowEngine:
         # Load workflow
         workflow = await self._load_workflow(workflow_id, org_id)
 
-        if not workflow.is_active:
+        if not workflow.is_active and workflow.status == "published":
             raise PravahException(
                 detail="Workflow is not active. Please activate the workflow before running.",
                 error_code="WORKFLOW_INACTIVE",
             )
 
-        if workflow.status not in ("published", "active"):
+        is_dev_run = workflow.status == "draft"
+
+        if workflow.status not in ("published", "active", "draft"):
             raise PravahException(
-                detail=f"Workflow must be published before it can run. Current status: {workflow.status}",
-                error_code="WORKFLOW_NOT_PUBLISHED",
+                detail=f"Cannot run workflow with status: {workflow.status}",
+                error_code="WORKFLOW_INVALID_STATUS",
             )
+
+        # Validate social accounts are connected for any social-publish nodes
+        from app.models.social import SocialAccount
+        social_node_types = {"publish_instagram", "publish_facebook", "publish_x", "publish_linkedin", "publish_youtube"}
+        social_nodes = [n for n in workflow.nodes if n.node_type in social_node_types]
+        if social_nodes:
+            connected_res = await self.db.execute(
+                select(SocialAccount).where(
+                    SocialAccount.organisation_id == org_id,
+                    SocialAccount.is_connected == True,
+                    SocialAccount.is_deleted == False if hasattr(SocialAccount, 'is_deleted') else True,
+                )
+            )
+            connected_accounts = {acc.platform for acc in connected_res.scalars().all()}
+            missing_platforms = []
+            for snode in social_nodes:
+                platform = snode.node_type.replace("publish_", "")
+                if platform not in connected_accounts:
+                    missing_platforms.append(platform.upper())
+            if missing_platforms:
+                raise PravahException(
+                    detail=(
+                        f"Social accounts not connected: {', '.join(missing_platforms)}. "
+                        "Please connect them in Social Settings before running this workflow."
+                    ),
+                    error_code="SOCIAL_ACCOUNT_NOT_CONNECTED",
+                )
 
         # Load the active published version snapshot
         version_res = await self.db.execute(

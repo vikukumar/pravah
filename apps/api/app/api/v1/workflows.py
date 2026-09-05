@@ -726,19 +726,28 @@ async def restore_workflow_version(
 async def execute_workflow(
     workflow_id: str,
     payload: WorkflowExecuteRequest,
+    dev_run: bool = Query(False, description="If true, run draft workflow without requiring published status"),
     tenant: TenantContext = Depends(require_permission("workflow.execute")),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Execute a workflow.
-    Returns the execution record with full node execution statuses.
+    - Published workflows: run normally.
+    - Draft workflows: add ?dev_run=true to run against current live nodes (test mode).
+      Dev runs are labelled clearly in execution history.
+    Validates that social accounts used in the workflow are connected before running.
     """
     engine = WorkflowEngine(db)
+
+    trigger_payload = payload.trigger_payload or {}
+    if dev_run:
+        trigger_payload["_dev_run"] = True
+
     execution = await engine.execute_workflow(
         workflow_id=workflow_id,
         org_id=tenant.organisation.id,
-        trigger_source=payload.trigger_source or "manual",
-        trigger_payload=payload.trigger_payload or {},
+        trigger_source=(payload.trigger_source or "manual") + ("_dev" if dev_run else ""),
+        trigger_payload=trigger_payload,
         actor=tenant.user,
         run_sync=True,
     )

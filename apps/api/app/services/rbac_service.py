@@ -40,7 +40,9 @@ DEFAULT_PERMISSIONS = [
     # Workflows
     ("workflow.view", "workflow", "View visual automation workflows"),
     ("workflow.create", "workflow", "Create and edit automation workflows"),
+    ("workflow.edit", "workflow", "Edit existing automation workflows"),
     ("workflow.execute", "workflow", "Execute automation workflows"),
+    ("workflow.publish", "workflow", "Publish workflows to production"),
     ("workflow.delete", "workflow", "Delete automation workflows"),
     
     # Campaigns & Media
@@ -85,10 +87,15 @@ class RBACService:
                 k for k in all_perms.keys() if k != "organisation.delete"
             ]),
             ("manager", "Content Manager", "Create, edit, approve, schedule, and publish content", [
-                "social.view", "social.sync", "content.view", "content.create", "content.update",
-                "content.delete", "content.approve", "content.publish", "ai.generate_text",
-                "ai.generate_image", "workflow.view", "workflow.create", "workflow.execute",
-                "workflow.delete", "campaign.manage", "media.manage", "analytics.view", "analytics.export"
+                "social.view", "social.connect", "social.disconnect", "social.sync",
+                "content.view", "content.create", "content.update", "content.delete",
+                "content.approve", "content.publish",
+                "ai.generate_text", "ai.generate_image", "ai.custom_provider",
+                "workflow.view", "workflow.create", "workflow.edit", "workflow.execute",
+                "workflow.publish", "workflow.delete",
+                "campaign.manage", "media.manage",
+                "analytics.view", "analytics.export",
+                "billing.view", "audit.view",
             ]),
             ("editor", "Editor", "Create and edit drafts requiring approval", [
                 "social.view", "content.view", "content.create", "content.update",

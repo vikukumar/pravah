@@ -18,13 +18,86 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Menu,
+  CreditCard,
+  Key,
+  Bot,
+  ScrollText,
+  Package,
+  Globe,
+  Activity,
+  Bell,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
+
+interface NavItem {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+  badge?: string;
+}
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+const ADMIN_NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Overview",
+    items: [
+      { name: "Platform Metrics", href: "/admin", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "User & Org Management",
+    items: [
+      { name: "All Users", href: "/admin/users", icon: Users },
+      { name: "All Workspaces", href: "/admin/organisations", icon: Building },
+      { name: "Roles & Permissions", href: "/admin/roles", icon: Shield },
+    ],
+  },
+  {
+    label: "AI & Content",
+    items: [
+      { name: "AI Providers & Models", href: "/admin/ai-models", icon: Bot },
+      { name: "CMS & Legal Pages", href: "/admin/cms", icon: FileText },
+    ],
+  },
+  {
+    label: "Integrations",
+    items: [
+      { name: "Social Media API Keys", href: "/admin/social-keys", icon: Globe },
+      { name: "Payment Gateways", href: "/admin/payment-gateways", icon: CreditCard },
+      { name: "Email & Notifications", href: "/admin/notifications", icon: Bell },
+    ],
+  },
+  {
+    label: "Billing & Plans",
+    items: [
+      { name: "Subscription Plans", href: "/admin/plans", icon: Package },
+      { name: "Billing & Invoices", href: "/admin/billing", icon: CreditCard, badge: "Beta" },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { name: "System Settings", href: "/admin/settings", icon: Sliders },
+      { name: "API Keys & Secrets", href: "/admin/api-keys", icon: Key },
+      { name: "Audit Trail", href: "/admin/audit-logs", icon: ScrollText },
+      { name: "System Health", href: "/admin/health", icon: Activity },
+    ],
+  },
+];
+
+// Flat list for header lookup
+const ALL_ADMIN_ITEMS = ADMIN_NAV_GROUPS.flatMap((g) => g.items);
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, isAuthenticated, isLoading } = useAuth();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isLoading) {
@@ -42,16 +115,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
-  const adminNav = [
-    { name: "Platform Metrics", href: "/admin", icon: LayoutDashboard },
-    { name: "AI Providers & Models", href: "/admin/ai-models", icon: Sliders },
-    { name: "Social Media API Keys", href: "/admin/social-keys", icon: Shield },
-    { name: "CMS & Legal Pages", href: "/admin/cms", icon: FileText },
-    { name: "All Users", href: "/admin/users", icon: Users },
-    { name: "All Workspaces", href: "/admin/organisations", icon: Building },
-    { name: "Audit Trail", href: "/admin/audit-logs", icon: FileText },
-    { name: "System Settings", href: "/admin/settings", icon: Sliders },
-  ];
+  const toggleGroup = (label: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      next.has(label) ? next.delete(label) : next.add(label);
+      return next;
+    });
+  };
+
+  const currentPageName = ALL_ADMIN_ITEMS.find((i) =>
+    pathname === i.href || pathname.startsWith(i.href + "/")
+  )?.name;
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#080c14] flex text-slate-100 selection:bg-indigo-500/30 selection:text-indigo-200">
@@ -96,40 +170,95 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         {/* Scrollable Nav Container */}
-        <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-4 min-h-0">
+        <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-1 min-h-0">
           {!isSidebarCollapsed && (
-            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-500/30">
-              <Shield className="w-4 h-4 text-indigo-400 shrink-0" />
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-red-950/30 border border-red-500/20 mb-3">
+              <Shield className="w-4 h-4 text-red-400 shrink-0" />
               <div className="truncate">
-                <p className="text-[10px] uppercase font-bold text-indigo-300">Super Administrator</p>
+                <p className="text-[10px] uppercase font-bold text-red-400">Super Administrator</p>
                 <p className="text-xs font-semibold text-slate-200 truncate">{user.email}</p>
               </div>
             </div>
           )}
 
-          <nav className="space-y-1">
-            {adminNav.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  title={isSidebarCollapsed ? item.name : undefined}
-                  className={`flex items-center ${
-                    isSidebarCollapsed ? "justify-center px-2 py-2.5" : "gap-2.5 px-3 py-2"
-                  } rounded-xl text-xs font-medium transition-all ${
-                    isActive
-                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
-                  }`}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  {!isSidebarCollapsed && <span className="truncate">{item.name}</span>}
-                </Link>
-              );
-            })}
-          </nav>
+          {isSidebarCollapsed ? (
+            // Collapsed: just icons
+            <nav className="space-y-1">
+              {ALL_ADMIN_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    title={item.name}
+                    className={`flex items-center justify-center px-2 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                      isActive
+                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                  </Link>
+                );
+              })}
+            </nav>
+          ) : (
+            // Expanded: grouped nav
+            <nav className="space-y-3">
+              {ADMIN_NAV_GROUPS.map((group) => {
+                const isGroupCollapsed = collapsedGroups.has(group.label);
+                return (
+                  <div key={group.label}>
+                    {/* Group header */}
+                    <button
+                      onClick={() => toggleGroup(group.label)}
+                      className="w-full flex items-center justify-between px-2 py-1 mb-1 group"
+                    >
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 group-hover:text-slate-400 transition-colors">
+                        {group.label}
+                      </span>
+                      {isGroupCollapsed ? (
+                        <ChevronRight className="w-3 h-3 text-slate-600 group-hover:text-slate-400" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3 text-slate-600 group-hover:text-slate-400" />
+                      )}
+                    </button>
+
+                    {/* Group items */}
+                    {!isGroupCollapsed && (
+                      <div className="space-y-0.5">
+                        {group.items.map((item) => {
+                          const Icon = item.icon;
+                          const isActive =
+                            pathname === item.href || pathname.startsWith(item.href + "/");
+                          return (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                                isActive
+                                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
+                                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                              }`}
+                            >
+                              <Icon className="w-3.5 h-3.5 shrink-0" />
+                              <span className="truncate flex-1">{item.name}</span>
+                              {item.badge && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                                  {item.badge}
+                                </span>
+                              )}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </nav>
+          )}
         </div>
 
         {/* Fixed Footer */}
@@ -162,7 +291,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold text-slate-200">
-                {adminNav.find((i) => i.href === pathname)?.name || "Super Admin"}
+                {currentPageName || "Super Admin"}
               </h2>
               <Badge variant="purple" className="text-[10px]">Master Console</Badge>
             </div>

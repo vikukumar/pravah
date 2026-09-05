@@ -433,12 +433,18 @@ export default function AIStudioPage() {
                 </div>
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={autoGenImage}
                   onClick={() => setAutoGenImage((v) => !v)}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                     autoGenImage ? "bg-indigo-600" : "bg-slate-700"
                   }`}
                 >
-                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${autoGenImage ? "translate-x-5" : "translate-x-0.5"}`} />
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      autoGenImage ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
                 </button>
               </div>
 
@@ -467,12 +473,18 @@ export default function AIStudioPage() {
                 </div>
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={autoUseHistory}
                   onClick={() => setAutoUseHistory((v) => !v)}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                     autoUseHistory ? "bg-indigo-600" : "bg-slate-700"
                   }`}
                 >
-                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${autoUseHistory ? "translate-x-5" : "translate-x-0.5"}`} />
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      autoUseHistory ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
                 </button>
               </div>
 
