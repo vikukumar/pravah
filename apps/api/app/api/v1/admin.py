@@ -756,6 +756,7 @@ async def get_system_health(
 
     # Redis health
     try:
+        # pyrefly: ignore [missing-module-attribute]
         from app.core.database import get_redis
         import asyncio
         redis = await get_redis()
@@ -966,6 +967,38 @@ async def list_all_subscriptions(
         }
         for s in subs
     ]
+
+
+@router.put("/billing/subscriptions/{subscription_id}/plan")
+async def admin_update_subscription_plan(
+    subscription_id: str,
+    payload: Dict[str, Any],
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Admin endpoint to change an organisation's subscription plan directly."""
+    from app.models.billing import Subscription
+    from app.services.billing_service import BillingService
+    res = await db.execute(select(Subscription).where(Subscription.id == subscription_id))
+    sub = res.scalar_one_or_none()
+    if not sub:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Subscription not found")
+
+    plan_id = payload.get("plan_id")
+    if not plan_id:
+        from fastapi import HTTPException
+        raise HTTPException(400, "plan_id is required")
+
+    billing_period = payload.get("billing_period", sub.billing_period or "monthly")
+    billing_svc = BillingService(db)
+    updated_sub = await billing_svc.activate_plan(
+        org_id=sub.organisation_id,
+        plan_id=plan_id,
+        billing_period=billing_period,
+        user=admin,
+    )
+    return {"message": "Subscription plan updated successfully", "plan_id": updated_sub.plan_id}
 
 
 @router.get("/billing/payments")
