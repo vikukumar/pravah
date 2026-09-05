@@ -2,5 +2,5 @@
 PRAVAH FastAPI Backend Application
 """
 
-__version__ = "1.0.2"
+__version__ = "1.1.0"
 __api_version__ = "v1"

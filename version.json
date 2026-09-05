@@ -1,12 +1,12 @@
 {
-  "version": "1.0.2",
-  "backend": "1.0.2",
-  "frontend": "1.0.2",
-  "shared_types": "1.0.2",
+  "version": "1.1.0",
+  "backend": "1.1.0",
+  "frontend": "1.1.0",
+  "shared_types": "1.1.0",
   "api_version": "v1",
   "schema_version": "c61b97841082",
   "min_compatible_backend": "1.0.0",
   "min_compatible_frontend": "1.0.0",
-  "release_date": "2026-09-04",
+  "release_date": "2026-09-05",
   "codename": "StreamFlow"
 }
