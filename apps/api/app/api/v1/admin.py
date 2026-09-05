@@ -658,7 +658,7 @@ async def list_system_roles(
     res = await db.execute(
         select(Role)
         .options(sli(Role.role_permissions))
-        .where(Role.organisation_id == None)
+        .where(Role.organisation_id.is_(None))
         .order_by(Role.created_at.asc())
     )
     roles = res.scalars().all()
@@ -993,7 +993,7 @@ async def list_all_payments(
             "amount": p.amount,
             "currency": p.currency,
             "status": p.status,
-            "payment_gateway": p.payment_gateway,
+            "payment_gateway": getattr(p, "gateway", getattr(p, "payment_gateway", None)),
             "gateway_payment_id": p.gateway_payment_id,
             "created_at": p.created_at,
         }

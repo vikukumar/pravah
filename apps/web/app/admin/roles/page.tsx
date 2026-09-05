@@ -134,7 +134,18 @@ export default function RolesPage() {
                     const color = MODULE_COLORS[mod] || "#64748b";
                     return (
                       <div key={mod} className="rounded-xl border border-slate-800 overflow-hidden">
-                        <button onClick={() => toggleModule(mod)} className="w-full flex items-center justify-between p-3 hover:bg-slate-800/40 transition-colors">
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toggleModule(mod)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              toggleModule(mod);
+                            }
+                          }}
+                          className="w-full flex items-center justify-between p-3 hover:bg-slate-800/40 transition-colors cursor-pointer select-none"
+                        >
                           <div className="flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full" style={{ background: color }} />
                             <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">{mod}</span>
@@ -148,7 +159,7 @@ export default function RolesPage() {
                             </button>
                             {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                           </div>
-                        </button>
+                        </div>
 
                         {isExpanded && (
                           <div className="border-t border-slate-800 bg-slate-900/30 divide-y divide-slate-800/50">
