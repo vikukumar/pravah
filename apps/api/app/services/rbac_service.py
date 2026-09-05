@@ -88,7 +88,7 @@ class RBACService:
                 "social.view", "social.sync", "content.view", "content.create", "content.update",
                 "content.delete", "content.approve", "content.publish", "ai.generate_text",
                 "ai.generate_image", "workflow.view", "workflow.create", "workflow.execute",
-                "campaign.manage", "media.manage", "analytics.view", "analytics.export"
+                "workflow.delete", "campaign.manage", "media.manage", "analytics.view", "analytics.export"
             ]),
             ("editor", "Editor", "Create and edit drafts requiring approval", [
                 "social.view", "content.view", "content.create", "content.update",

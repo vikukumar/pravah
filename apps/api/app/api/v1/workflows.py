@@ -255,17 +255,28 @@ async def create_from_template(
 async def list_workflows(
     status_filter: Optional[str] = Query(None, alias="status"),
     search: Optional[str] = Query(None),
+    show_archived: bool = Query(False),
     tenant: TenantContext = Depends(require_permission("workflow.view")),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    List workflows for the organisation.
+    By default excludes archived (soft-deleted) workflows.
+    Pass ?show_archived=true to include them.
+    """
     query = (
         select(Workflow)
         .options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
         .where(Workflow.organisation_id == tenant.organisation.id)
         .order_by(Workflow.updated_at.desc())
     )
+
+    # Exclude archived unless explicitly requested
     if status_filter:
         query = query.where(Workflow.status == status_filter)
+    elif not show_archived:
+        query = query.where(Workflow.status != "archived")
+
     if search:
         query = query.where(Workflow.name.ilike(f"%{search}%"))
 
@@ -433,16 +444,35 @@ async def update_workflow(
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_workflow(
     workflow_id: str,
+    permanent: bool = Query(False, description="If true, permanently delete from DB (owner only)"),
     tenant: TenantContext = Depends(require_permission("workflow.delete")),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Workflow).where(Workflow.id == workflow_id, Workflow.organisation_id == tenant.organisation.id)
+    """
+    Delete (archive) a workflow.
+    - Default: soft-archive — workflow stops running, history preserved, hidden from list.
+    - ?permanent=true — hard delete (removes DB records). Only for org_owner / super_admin.
+    """
+    q = (
+        select(Workflow)
+        .options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
+        .where(Workflow.id == workflow_id, Workflow.organisation_id == tenant.organisation.id)
+    )
     res = await db.execute(q)
     workflow = res.scalar_one_or_none()
     if not workflow:
         raise NotFoundException("Workflow not found.")
-    workflow.status = "archived"
-    workflow.is_active = False
+
+    if permanent:
+        # Hard delete: remove nodes, edges, then workflow
+        await db.execute(delete(WorkflowNode).where(WorkflowNode.workflow_id == workflow_id))
+        await db.execute(delete(WorkflowEdge).where(WorkflowEdge.workflow_id == workflow_id))
+        await db.delete(workflow)
+    else:
+        # Soft archive
+        workflow.status = "archived"
+        workflow.is_active = False
+
     await db.commit()
 
 
