@@ -90,6 +90,23 @@ class Settings(BaseSettings):
     MICROSOFT_CLIENT_ID: Optional[str] = None
     MICROSOFT_CLIENT_SECRET: Optional[str] = None
 
+    # Calendar API Integration
+    # Calendarific: https://calendarific.com — Free tier: 1000 calls/month
+    # Covers India national + religious holidays (accurate lunisolar dates)
+    CALENDARIFIC_API_KEY: Optional[str] = None
+
+    # Abstract Holidays: https://app.abstractapi.com/api/holidays
+    # Free tier: 1000 calls/month (no credit card needed)
+    ABSTRACT_HOLIDAYS_API_KEY: Optional[str] = None
+
+    # Google Calendar API key (server-side, for public calendars — no OAuth needed)
+    # Enable Calendar API at console.cloud.google.com
+    GOOGLE_CALENDAR_API_KEY: Optional[str] = None
+
+    # Google Calendar OAuth (for users connecting personal Google Calendars)
+    GOOGLE_CALENDAR_CLIENT_ID: Optional[str] = None
+    GOOGLE_CALENDAR_CLIENT_SECRET: Optional[str] = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

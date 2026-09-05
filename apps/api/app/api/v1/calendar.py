@@ -245,3 +245,52 @@ async def get_google_events(
 
     svc = CalendarService(db)
     return await svc.get_google_events(tenant.organisation.id, year, month)
+
+
+@router.get("/api-status", summary="Check which calendar APIs are configured")
+async def get_api_status(
+    tenant: TenantContext = Depends(require_permission("content.view")),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Returns configuration status for all calendar data sources:
+    - Calendarific (most accurate, lunisolar festivals)
+    - Abstract Holidays (free tier)
+    - Nager.Date (always available, no key)
+    - Google Calendar public (Indian/Hindu/Islamic)
+    """
+    svc = CalendarService(db)
+    status = await svc.get_api_status()
+    configured_count = sum(1 for s in status.values() if s["configured"])
+    return {
+        "sources": status,
+        "active_sources": configured_count,
+        "recommendation": (
+            "Add CALENDARIFIC_API_KEY to .env for the most accurate Indian festival dates "
+            "(lunisolar Holi, Diwali, Eid, etc.)"
+            if not status["calendarific"]["configured"]
+            else "Calendarific is active — festival dates are accurate!"
+        ),
+    }
+
+
+@router.post("/refresh-cache", summary="Force refresh festival data from APIs")
+async def refresh_festival_cache(
+    year: int = Query(default=None),
+    tenant: TenantContext = Depends(require_permission("content.create")),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Invalidates the cached festival data for the given year and re-fetches from live APIs.
+    Useful after updating API keys or to get the latest data.
+    """
+    now = datetime.now(timezone.utc)
+    year = year or now.year
+    svc = CalendarService(db)
+    created = await svc.invalidate_cache(tenant.organisation.id, year)
+    return {
+        "success": True,
+        "year": year,
+        "events_created": created,
+        "message": f"Festival data refreshed: {created} events loaded for {year}.",
+    }

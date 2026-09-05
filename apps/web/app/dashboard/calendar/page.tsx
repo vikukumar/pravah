@@ -17,10 +17,12 @@ import {
   Sparkles,
   Globe,
   Link2,
-  Sun,
-  Moon,
   Star,
   Zap,
+  RefreshCw,
+  CheckCircle,
+  AlertCircle,
+  Info,
 } from "lucide-react";
 
 interface CalendarEvent {
@@ -89,6 +91,8 @@ export default function CalendarPage() {
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [googleConnected, setGoogleConnected] = useState(false);
+  const [apiStatus, setApiStatus] = useState<any>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchCalendarData = useCallback(async () => {
     if (!activeOrg) return;
@@ -110,9 +114,19 @@ export default function CalendarPage() {
     }
   }, [activeOrg, currentMonth, currentYear]);
 
+  const fetchApiStatus = useCallback(async () => {
+    try {
+      const status = await fetchApi<any>("/calendar/api-status");
+      setApiStatus(status);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     fetchCalendarData();
-  }, [fetchCalendarData]);
+    fetchApiStatus();
+  }, [fetchCalendarData, fetchApiStatus]);
 
   const handleDayClick = useCallback(
     async (dateStr: string) => {
@@ -168,6 +182,23 @@ export default function CalendarPage() {
       hashtags: (suggestion.hashtags || []).join(","),
     });
     router.push(`/dashboard/ai-studio?${params.toString()}`);
+  };
+
+  const handleRefreshCache = async () => {
+    setIsRefreshing(true);
+    try {
+      const res = await fetchApi<any>(
+        `/calendar/refresh-cache?year=${currentYear}`,
+        { method: "POST" }
+      );
+      toast.success("Cache Refreshed", res.message);
+      fetchCalendarData();
+      fetchApiStatus();
+    } catch (err: any) {
+      toast.error("Refresh Failed", err.message);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const handleConnectGoogle = async () => {
@@ -618,6 +649,68 @@ export default function CalendarPage() {
                   </p>
                 )}
             </div>
+          </Card>
+
+          {/* Data Source Status Card */}
+          <Card className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Info className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="text-xs font-bold text-slate-200">Festival Data Sources</span>
+              </div>
+              <button
+                onClick={handleRefreshCache}
+                disabled={isRefreshing}
+                className="text-[10px] text-slate-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
+              >
+                <RefreshCw className={`w-3 h-3 ${isRefreshing ? "animate-spin" : ""}`} />
+                {isRefreshing ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            {apiStatus ? (
+              <div className="space-y-2">
+                {Object.entries(apiStatus.sources as Record<string, any>).map(
+                  ([key, src]: [string, any]) => (
+                    <div key={key} className="flex items-start gap-2">
+                      {src.configured ? (
+                        <CheckCircle className="w-3 h-3 text-emerald-400 shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertCircle className="w-3 h-3 text-slate-600 shrink-0 mt-0.5" />
+                      )}
+                      <div className="min-w-0">
+                        <p className={`text-[10px] font-semibold leading-tight ${
+                          src.configured ? "text-slate-300" : "text-slate-500"
+                        }`}>
+                          {key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                        </p>
+                        {!src.configured && src.env_var && (
+                          <p className="text-[9px] text-slate-600 mt-0.5">
+                            Set <code className="text-amber-500/70">{src.env_var}</code> in .env
+                          </p>
+                        )}
+                        {src.configured && (
+                          <p className="text-[9px] text-emerald-500/70">{src.free_tier}</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                )}
+                {!apiStatus.sources?.calendarific?.configured && (
+                  <div className="mt-2 p-2 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                    <p className="text-[9px] text-amber-400/80 leading-relaxed">
+                      💡 Add <strong>CALENDARIFIC_API_KEY</strong> to .env for accurate lunisolar dates (Holi, Diwali, Eid)
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-5 rounded bg-slate-800/50 animate-pulse" />
+                ))}
+              </div>
+            )}
           </Card>
 
           {/* Google Calendar Card */}
