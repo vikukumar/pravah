@@ -81,6 +81,22 @@ class CashfreeVerifyRequest(BaseModel):
     plan_id: str
     billing_period: str = "monthly"
 
+class ChangePlanRequest(BaseModel):
+    plan_id: str
+    billing_period: str = "monthly"
+
+class QuotaLimitsSchema(BaseModel):
+    social_account_limit: int = 1
+    page_limit: int = 1
+    monthly_post_limit: int = 30
+    daily_post_limit: int = 1
+    ai_token_limit_monthly: int = 50000
+    image_generation_limit_monthly: int = 10
+    workflow_limit: int = 3
+    workflow_execution_limit_monthly: int = 100
+    member_limit: int = 1
+    storage_limit_mb: int = 500
+
 class UsageMetricsResponse(BaseModel):
     connected_social_accounts: int
     social_account_limit: int
@@ -89,6 +105,7 @@ class UsageMetricsResponse(BaseModel):
     posts_published_today: int
     daily_post_limit: int
     ai_tokens_used_this_month: int
+    ai_tokens_consumed_this_month: int = 0
     ai_token_limit_monthly: int
     images_generated_this_month: int
     image_generation_limit_monthly: int
@@ -100,3 +117,6 @@ class UsageMetricsResponse(BaseModel):
     member_limit: int
     storage_used_mb: float
     storage_limit_mb: int
+    plan_name: Optional[str] = None
+    plan_slug: Optional[str] = None
+    limits: Optional[QuotaLimitsSchema] = None

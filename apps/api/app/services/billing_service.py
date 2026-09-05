@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -197,6 +197,18 @@ class BillingService:
         org = org_res.scalar_one_or_none()
         plan_feat = org.subscription.plan.features if (org and org.subscription and org.subscription.plan) else None
 
+        # Fallback to Free plan features from DB if org has no subscription/features
+        if not plan_feat:
+            free_plan_res = await self.db.execute(
+                select(Plan).options(selectinload(Plan.features)).where(Plan.slug == "free")
+            )
+            free_plan = free_plan_res.scalar_one_or_none()
+            if free_plan and free_plan.features:
+                plan_feat = free_plan.features
+
+        plan_name = org.subscription.plan.name if (org and org.subscription and org.subscription.plan) else "Free"
+        plan_slug = org.subscription.plan.slug if (org and org.subscription and org.subscription.plan) else "free"
+
         # 2. Count connected social accounts
         acc_cnt_res = await self.db.execute(
             select(func.count(SocialAccount.id)).where(SocialAccount.organisation_id == org_id, SocialAccount.is_connected == True)
@@ -263,26 +275,134 @@ class BillingService:
         )
         team_members = members_res.scalar() or 0
 
-        return {
-            "connected_social_accounts": connected_accounts,
+        limits = {
             "social_account_limit": plan_feat.social_account_limit if plan_feat else 1,
-            "posts_published_this_month": posts_month,
+            "page_limit": plan_feat.page_limit if plan_feat else 1,
             "monthly_post_limit": plan_feat.monthly_post_limit if plan_feat else 30,
-            "posts_published_today": posts_today,
             "daily_post_limit": plan_feat.daily_post_limit if plan_feat else 1,
-            "ai_tokens_used_this_month": int(ai_tokens),
             "ai_token_limit_monthly": plan_feat.ai_token_limit_monthly if plan_feat else 50000,
-            "images_generated_this_month": int(ai_images),
             "image_generation_limit_monthly": plan_feat.image_generation_limit_monthly if plan_feat else 10,
-            "active_workflows": active_workflows,
             "workflow_limit": plan_feat.workflow_limit if plan_feat else 3,
-            "workflow_executions_this_month": wf_executions,
             "workflow_execution_limit_monthly": plan_feat.workflow_execution_limit_monthly if plan_feat else 100,
-            "team_members": team_members,
             "member_limit": plan_feat.member_limit if plan_feat else 1,
-            "storage_used_mb": 12.5, # computed from content assets
             "storage_limit_mb": plan_feat.storage_limit_mb if plan_feat else 500,
         }
+
+        return {
+            "connected_social_accounts": connected_accounts,
+            "social_account_limit": limits["social_account_limit"],
+            "posts_published_this_month": posts_month,
+            "monthly_post_limit": limits["monthly_post_limit"],
+            "posts_published_today": posts_today,
+            "daily_post_limit": limits["daily_post_limit"],
+            "ai_tokens_used_this_month": int(ai_tokens),
+            "ai_tokens_consumed_this_month": int(ai_tokens),
+            "ai_token_limit_monthly": limits["ai_token_limit_monthly"],
+            "images_generated_this_month": int(ai_images),
+            "image_generation_limit_monthly": limits["image_generation_limit_monthly"],
+            "active_workflows": active_workflows,
+            "workflow_limit": limits["workflow_limit"],
+            "workflow_executions_this_month": wf_executions,
+            "workflow_execution_limit_monthly": limits["workflow_execution_limit_monthly"],
+            "team_members": team_members,
+            "member_limit": limits["member_limit"],
+            "storage_used_mb": 12.5,
+            "storage_limit_mb": limits["storage_limit_mb"],
+            "plan_name": plan_name,
+            "plan_slug": plan_slug,
+            "limits": limits,
+        }
+
+    async def check_quota(self, org_id: str, resource: str, increment: int = 1) -> tuple[bool, int, int]:
+        """
+        Validates resource quota against active plan features.
+        Returns (is_allowed, current_usage, limit).
+        """
+        metrics = await self.get_usage_metrics(org_id)
+        limits = metrics.get("limits", {})
+
+        resource_map = {
+            "social_accounts": ("connected_social_accounts", "social_account_limit"),
+            "posts_monthly": ("posts_published_this_month", "monthly_post_limit"),
+            "posts_daily": ("posts_published_today", "daily_post_limit"),
+            "ai_tokens": ("ai_tokens_used_this_month", "ai_token_limit_monthly"),
+            "images": ("images_generated_this_month", "image_generation_limit_monthly"),
+            "workflows": ("active_workflows", "workflow_limit"),
+            "workflow_executions": ("workflow_executions_this_month", "workflow_execution_limit_monthly"),
+            "members": ("team_members", "member_limit"),
+        }
+
+        if resource not in resource_map:
+            return True, 0, 999999
+
+        curr_key, limit_key = resource_map[resource]
+        current = metrics.get(curr_key, 0)
+        limit = limits.get(limit_key, 999999)
+
+        is_allowed = (current + increment) <= limit
+        return is_allowed, current, limit
+
+    async def activate_plan(
+        self,
+        org_id: str,
+        plan_id: str,
+        billing_period: str = "monthly",
+        user: Optional[User] = None,
+        payment_gateway: Optional[str] = None,
+    ) -> Subscription:
+        """
+        Activates or upgrades an organisation's subscription to target plan directly.
+        Expands resource quotas immediately.
+        """
+        plan_res = await self.db.execute(
+            select(Plan).options(selectinload(Plan.features)).where(Plan.id == plan_id)
+        )
+        plan = plan_res.scalar_one_or_none()
+        if not plan:
+            raise NotFoundException("Target plan not found.")
+
+        sub_res = await self.db.execute(select(Subscription).where(Subscription.organisation_id == org_id))
+        sub = sub_res.scalar_one_or_none()
+
+        duration_days = 365 if billing_period == "yearly" else 30
+        now = datetime.now(timezone.utc)
+
+        if sub:
+            sub.plan_id = plan.id
+            sub.status = "active"
+            sub.billing_period = billing_period
+            sub.current_period_start = now
+            sub.current_period_end = now + timedelta(days=duration_days)
+            if payment_gateway:
+                sub.payment_gateway = payment_gateway
+        else:
+            sub = Subscription(
+                organisation_id=org_id,
+                plan_id=plan.id,
+                status="active",
+                billing_period=billing_period,
+                current_period_start=now,
+                current_period_end=now + timedelta(days=duration_days),
+                payment_gateway=payment_gateway or "direct",
+            )
+            self.db.add(sub)
+
+        if user:
+            audit = AuditLog(
+                actor_id=user.id,
+                actor_email=user.email,
+                organisation_id=org_id,
+                action="subscription.plan_changed",
+                target_type="subscription",
+                target_id=sub.id,
+                result="success",
+                details={"plan_name": plan.name, "plan_id": plan.id, "billing_period": billing_period},
+            )
+            self.db.add(audit)
+
+        await self.db.commit()
+        await self.db.refresh(sub)
+        return sub
 
     async def create_razorpay_order(self, org_id: str, plan_id: str, billing_period: str, user: User) -> Dict[str, Any]:
         """Creates a real Razorpay order via the Razorpay Orders API."""

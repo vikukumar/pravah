@@ -79,8 +79,36 @@ export default function BillingPage() {
     return `${symbol}${converted.toLocaleString(undefined, { minimumFractionDigits: converted % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 })}`;
   };
 
+  const handleDirectActivate = async (plan: Plan) => {
+    setIsProcessingPayment(true);
+    try {
+      await fetchApi("/billing/change-plan", {
+        method: "POST",
+        body: JSON.stringify({
+          plan_id: plan.id,
+          billing_period: billingPeriod,
+        }),
+      });
+      toast.success("Plan Activated!", `Successfully switched to ${plan.name} plan with upgraded quotas.`);
+      setSelectedPlanForUpgrade(null);
+      fetchData();
+    } catch (e: any) {
+      toast.error("Failed to activate plan", e.message);
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
   const handleRazorpayUpgrade = async () => {
     if (!selectedPlanForUpgrade) return;
+
+    // Free plan or direct 0-cost switch
+    const price = billingPeriod === "monthly" ? selectedPlanForUpgrade.price_monthly : selectedPlanForUpgrade.price_yearly;
+    if (selectedPlanForUpgrade.is_free || price === 0) {
+      await handleDirectActivate(selectedPlanForUpgrade);
+      return;
+    }
+
     setIsProcessingPayment(true);
     try {
       // 1. Create real order on server
@@ -149,6 +177,11 @@ export default function BillingPage() {
       setSelectedPlanForUpgrade(null);
       fetchData();
     } catch (err: any) {
+      if (err.message && err.message.includes("Payment gateway not configured")) {
+        toast.info("Payment Gateway Not Configured", "Activating plan directly in development mode...");
+        await handleDirectActivate(selectedPlanForUpgrade);
+        return;
+      }
       if (err.message !== "Payment cancelled.") {
         toast.error("Payment Failed", err.message || "Could not complete transaction.");
       }
@@ -161,30 +194,44 @@ export default function BillingPage() {
     {
       title: "Connected Social Channels",
       current: usage?.connected_social_accounts ?? 0,
-      limit: usage?.limits?.social_account_limit ?? 1,
+      limit: usage?.limits?.social_account_limit ?? usage?.social_account_limit ?? 1,
       icon: Share2,
       color: "bg-indigo-500",
     },
     {
       title: "Posts Published (This Month)",
       current: usage?.posts_published_this_month ?? 0,
-      limit: usage?.limits?.monthly_post_limit ?? 30,
+      limit: usage?.limits?.monthly_post_limit ?? usage?.monthly_post_limit ?? 30,
       icon: FileText,
       color: "bg-cyan-500",
     },
     {
       title: "AI Tokens Consumed",
-      current: usage?.ai_tokens_consumed_this_month ?? 0,
-      limit: usage?.limits?.ai_token_limit_monthly ?? 100000,
+      current: usage?.ai_tokens_consumed_this_month ?? usage?.ai_tokens_used_this_month ?? 0,
+      limit: usage?.limits?.ai_token_limit_monthly ?? usage?.ai_token_limit_monthly ?? 100000,
       icon: Bot,
       color: "bg-purple-500",
     },
     {
       title: "Active Automation Workflows",
       current: usage?.active_workflows ?? 0,
-      limit: usage?.limits?.workflow_limit ?? 2,
+      limit: usage?.limits?.workflow_limit ?? usage?.workflow_limit ?? 2,
       icon: Workflow,
       color: "bg-emerald-500",
+    },
+    {
+      title: "Team Members",
+      current: usage?.team_members ?? 1,
+      limit: usage?.limits?.member_limit ?? usage?.member_limit ?? 1,
+      icon: Users,
+      color: "bg-amber-500",
+    },
+    {
+      title: "Workflow Executions (Monthly)",
+      current: usage?.workflow_executions_this_month ?? 0,
+      limit: usage?.limits?.workflow_execution_limit_monthly ?? usage?.workflow_execution_limit_monthly ?? 100,
+      icon: Zap,
+      color: "bg-violet-500",
     },
   ];
 
@@ -256,7 +303,7 @@ export default function BillingPage() {
       {/* Real-time Usage Progress Meters */}
       <div className="space-y-4">
         <h3 className="text-sm font-semibold text-slate-200">Real-Time Resource Quotas</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {meters.map((meter, idx) => {
             const Icon = meter.icon;
             const pct = Math.min(100, Math.round((meter.current / (meter.limit || 1)) * 100));

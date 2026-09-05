@@ -7,6 +7,7 @@ from app.api.deps import TenantContext, require_permission
 from app.core.database import get_db
 from app.models.billing import Subscription
 from app.schemas.billing import (
+    ChangePlanRequest,
     CashfreeOrderCreateRequest,
     PlanFeatureSchema,
     PlanResponse,
@@ -92,6 +93,41 @@ async def get_active_subscription(
         trial_end=sub.trial_end,
         cancel_at_period_end=sub.cancel_at_period_end,
         payment_gateway=sub.payment_gateway,
+    )
+
+@router.post("/change-plan", response_model=SubscriptionResponse)
+async def change_subscription_plan(
+    payload: ChangePlanRequest,
+    tenant: TenantContext = Depends(require_permission("billing.manage")),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Directly updates or switches the organisation's active subscription plan.
+    Enables instant quota expansion.
+    """
+    billing_svc = BillingService(db)
+    sub = await billing_svc.activate_plan(
+        org_id=tenant.organisation.id,
+        plan_id=payload.plan_id,
+        billing_period=payload.billing_period,
+        user=tenant.user,
+    )
+    res = await db.execute(
+        select(Subscription).options(selectinload(Subscription.plan)).where(Subscription.id == sub.id)
+    )
+    updated_sub = res.scalar_one_or_none() or sub
+    return SubscriptionResponse(
+        id=updated_sub.id,
+        organisation_id=updated_sub.organisation_id,
+        plan_id=updated_sub.plan_id,
+        plan_name=updated_sub.plan.name if updated_sub.plan else "Free",
+        status=updated_sub.status,
+        billing_period=updated_sub.billing_period,
+        current_period_start=updated_sub.current_period_start,
+        current_period_end=updated_sub.current_period_end,
+        trial_end=updated_sub.trial_end,
+        cancel_at_period_end=updated_sub.cancel_at_period_end,
+        payment_gateway=updated_sub.payment_gateway,
     )
 
 @router.get("/usage", response_model=UsageMetricsResponse)

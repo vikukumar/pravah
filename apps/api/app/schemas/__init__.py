@@ -65,6 +65,8 @@ from app.schemas.billing import (
     CashfreeOrderCreateRequest,
     CashfreeVerifyRequest,
     UsageMetricsResponse,
+    QuotaLimitsSchema,
+    ChangePlanRequest,
 )
 from app.schemas.cms import (
     CMSBlockSchema,

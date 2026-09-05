@@ -54,7 +54,7 @@ export default function DashboardOverviewPage() {
     {
       title: "Connected Accounts",
       value: usage?.connected_social_accounts ?? accounts.length,
-      limit: usage?.limits?.social_account_limit ?? 1,
+      limit: usage?.limits?.social_account_limit ?? usage?.social_account_limit ?? 1,
       icon: Share2,
       color: "text-indigo-400",
       bgColor: "bg-indigo-500/10 border-indigo-500/20",
@@ -62,15 +62,15 @@ export default function DashboardOverviewPage() {
     {
       title: "Posts This Month",
       value: usage?.posts_published_this_month ?? 0,
-      limit: usage?.limits?.monthly_post_limit ?? 30,
+      limit: usage?.limits?.monthly_post_limit ?? usage?.monthly_post_limit ?? 30,
       icon: FileText,
       color: "text-cyan-400",
       bgColor: "bg-cyan-500/10 border-cyan-500/20",
     },
     {
       title: "AI Tokens Used",
-      value: (usage?.ai_tokens_consumed_this_month ?? 0).toLocaleString(),
-      limit: (usage?.limits?.ai_token_limit_monthly ?? 100000).toLocaleString(),
+      value: (usage?.ai_tokens_consumed_this_month ?? usage?.ai_tokens_used_this_month ?? 0).toLocaleString(),
+      limit: (usage?.limits?.ai_token_limit_monthly ?? usage?.ai_token_limit_monthly ?? 100000).toLocaleString(),
       icon: Bot,
       color: "text-purple-400",
       bgColor: "bg-purple-500/10 border-purple-500/20",
@@ -78,7 +78,7 @@ export default function DashboardOverviewPage() {
     {
       title: "Active Workflows",
       value: usage?.active_workflows ?? 0,
-      limit: usage?.limits?.workflow_limit ?? 2,
+      limit: usage?.limits?.workflow_limit ?? usage?.workflow_limit ?? 2,
       icon: Workflow,
       color: "text-emerald-400",
       bgColor: "bg-emerald-500/10 border-emerald-500/20",

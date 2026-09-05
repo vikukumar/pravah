@@ -295,25 +295,44 @@ export interface Subscription {
 export interface UsageMetrics {
   connected_social_accounts?: number;
   connectedSocialAccounts?: number;
+  social_account_limit?: number;
   posts_published_this_month?: number;
   postsPublishedThisMonth?: number;
+  monthly_post_limit?: number;
+  posts_published_today?: number;
+  daily_post_limit?: number;
   ai_tokens_consumed_this_month?: number;
+  ai_tokens_used_this_month?: number;
   aiTokensUsedThisMonth?: number;
+  ai_token_limit_monthly?: number;
   images_generated_this_month?: number;
+  image_generation_limit_monthly?: number;
   active_workflows?: number;
   activeWorkflows?: number;
+  workflow_limit?: number;
+  workflow_executions_this_month?: number;
+  workflow_execution_limit_monthly?: number;
   team_members?: number;
   teamMembers?: number;
+  member_limit?: number;
+  storage_used_mb?: number;
+  storage_limit_mb?: number;
+  plan_name?: string;
+  plan_slug?: string;
   limits?: {
     social_account_limit?: number;
     socialAccountLimit?: number;
     monthly_post_limit?: number;
     monthlyPostLimit?: number;
+    daily_post_limit?: number;
     ai_token_limit_monthly?: number;
     aiTokenLimitMonthly?: number;
+    image_generation_limit_monthly?: number;
     workflow_limit?: number;
     workflowLimit?: number;
+    workflow_execution_limit_monthly?: number;
     member_limit?: number;
     memberLimit?: number;
+    storage_limit_mb?: number;
   };
 }
