@@ -585,18 +585,24 @@ class SocialService:
         )
         self.db.add(summary)
 
-    async def list_organisation_accounts(self, org_id: str) -> List[SocialAccount]:
+    async def list_organisation_accounts(self, org_id: str, include_deleted: bool = False) -> List[SocialAccount]:
         query = (
             select(SocialAccount)
             .options(selectinload(SocialAccount.pages))
             .where(SocialAccount.organisation_id == org_id)
-            .order_by(SocialAccount.created_at.desc())
         )
+        if not include_deleted:
+            query = query.where(SocialAccount.is_deleted.is_(False))
+        query = query.order_by(SocialAccount.created_at.desc())
         res = await self.db.execute(query)
         return list(res.scalars().all())
 
     async def disconnect_account(self, org_id: str, account_id: str, actor: User):
-        query = select(SocialAccount).where(SocialAccount.id == account_id, SocialAccount.organisation_id == org_id)
+        query = select(SocialAccount).where(
+            SocialAccount.id == account_id,
+            SocialAccount.organisation_id == org_id,
+            SocialAccount.is_deleted.is_(False),
+        )
         res = await self.db.execute(query)
         account = res.scalar_one_or_none()
         if not account:
@@ -613,6 +619,58 @@ class SocialService:
         )
         self.db.add(audit)
         await self.db.commit()
+
+    async def soft_delete_account(
+        self, org_id: str, account_id: str, actor: User, reason: str = "User requested removal"
+    ):
+        """
+        Soft-delete: marks account as deleted so it is hidden from all UI lists.
+        The record and all history stays in the DB permanently for audit purposes.
+        Tokens are invalidated. The account cannot be reconnected under the same record—
+        a new OAuth flow will create a fresh SocialAccount row.
+        """
+        query = select(SocialAccount).where(
+            SocialAccount.id == account_id,
+            SocialAccount.organisation_id == org_id,
+        )
+        res = await self.db.execute(query)
+        account = res.scalar_one_or_none()
+        if not account:
+            raise NotFoundException("Social account not found")
+
+        account.is_connected = False
+        account.is_deleted = True
+        account.deleted_at = datetime.now(timezone.utc)
+        account.health_status = "removed"
+        account.disconnect_reason = reason
+
+        # Invalidate all tokens
+        await self.db.execute(
+            update(SocialToken)
+            .where(SocialToken.social_account_id == account.id)
+            .values(is_valid=False)
+        )
+
+        audit = AuditLog(
+            actor_id=actor.id, actor_email=actor.email, organisation_id=org_id,
+            action="social.removed", target_type="social_account", target_id=account.id,
+            result="success",
+            details={
+                "provider": account.provider,
+                "account_id": account.account_id,
+                "account_name": account.account_name,
+                "reason": reason,
+            },
+        )
+        self.db.add(audit)
+        await self.db.commit()
+
+    async def get_account_history(self, org_id: str) -> List[SocialAccount]:
+        """
+        Returns ALL accounts for an org including soft-deleted ones.
+        Used in the UI 'Connection History' view.
+        """
+        return await self.list_organisation_accounts(org_id, include_deleted=True)
 
     async def get_ai_profile_summary(self, account_id: str) -> Optional[SocialProfileSummary]:
         query = (

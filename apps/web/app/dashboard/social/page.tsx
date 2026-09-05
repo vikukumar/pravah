@@ -68,6 +68,14 @@ export default function SocialAccountsPage() {
   // Connect Modal
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [disconnectAccountId, setDisconnectAccountId] = useState<string | null>(null);
+  const [removeAccountId, setRemoveAccountId] = useState<string | null>(null);
+
+  // History
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyAccounts, setHistoryAccounts] = useState<any[]>([]);
+
+  // Post sync
+  const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
 
   // OAuth popup reference
   const oauthPopupRef = useRef<Window | null>(null);
@@ -195,12 +203,50 @@ export default function SocialAccountsPage() {
   const handleDisconnect = async () => {
     if (!disconnectAccountId) return;
     try {
-      await fetchApi(`/social/accounts/${disconnectAccountId}`, { method: "DELETE" });
-      toast.success("Account Disconnected", "Credentials revoked and tokens invalidated.");
+      await fetchApi(`/social/accounts/${disconnectAccountId}/disconnect`, { method: "POST" });
+      toast.success("Account Disconnected", "Tokens invalidated. Account history preserved. You can reconnect anytime.");
       setDisconnectAccountId(null);
       fetchData();
     } catch (err: any) {
       toast.error("Disconnect Failed", err.message || "Failed to disconnect account.");
+    }
+  };
+
+  const handleRemoveAccount = async () => {
+    if (!removeAccountId) return;
+    try {
+      await fetchApi(`/social/accounts/${removeAccountId}`, { method: "DELETE" });
+      toast.success("Account Removed", "Account hidden from workspace. Full history preserved in backend.");
+      setRemoveAccountId(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Remove Failed", err.message || "Failed to remove account.");
+    }
+  };
+
+  const handleSyncPosts = async (accountId: string) => {
+    setSyncingAccountId(accountId);
+    try {
+      const res = await fetchApi<any>(`/social/accounts/${accountId}/sync-posts`, { method: "POST" });
+      if (res.skipped) {
+        toast.info("Sync Skipped", res.reason);
+      } else {
+        toast.success("Posts Synced", `Fetched ${res.synced} new posts. Total cached: ${res.total_cached || 0}.`);
+      }
+    } catch (err: any) {
+      toast.error("Sync Failed", err.message || "Could not sync posts.");
+    } finally {
+      setSyncingAccountId(null);
+    }
+  };
+
+  const handleViewHistory = async () => {
+    setShowHistory(true);
+    try {
+      const data = await fetchApi<any[]>("/social/accounts/history");
+      setHistoryAccounts(data);
+    } catch {
+      setHistoryAccounts([]);
     }
   };
 

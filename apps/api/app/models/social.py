@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text, BigInteger
 from sqlalchemy.orm import relationship
 from app.core.database import BaseModel
 
@@ -34,15 +34,21 @@ class SocialAccount(BaseModel):
     username = Column(String(255), nullable=True)
     profile_image_url = Column(String(500), nullable=True)
     is_connected = Column(Boolean, default=True, nullable=False)
-    health_status = Column(String(50), default="healthy", nullable=False) # healthy, warning, expired, error
+    health_status = Column(String(50), default="healthy", nullable=False) # healthy, warning, expired, error, disconnected
     last_sync_at = Column(DateTime(timezone=True), nullable=True)
     error_details = Column(Text, nullable=True)
+
+    # Soft-delete: records are NEVER hard-deleted; is_deleted=True hides from UI
+    is_deleted = Column(Boolean, default=False, nullable=False, index=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    disconnect_reason = Column(String(500), nullable=True)  # reason for disconnect/removal
 
     organisation = relationship("Organisation", back_populates="social_accounts")
     tokens = relationship("SocialToken", back_populates="social_account", cascade="all, delete-orphan")
     pages = relationship("SocialPage", back_populates="social_account", cascade="all, delete-orphan")
     profile = relationship("SocialProfile", back_populates="social_account", uselist=False, cascade="all, delete-orphan")
     summaries = relationship("SocialProfileSummary", back_populates="social_account", cascade="all, delete-orphan")
+    post_history = relationship("SocialPostHistory", back_populates="social_account", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_org_provider_account", "organisation_id", "provider", "account_id", unique=True),
@@ -115,3 +121,34 @@ class SocialProfileSummary(BaseModel):
     summary_data = Column(JSON, nullable=True)
 
     social_account = relationship("SocialAccount", back_populates="summaries")
+
+
+class SocialPostHistory(BaseModel):
+    """
+    Cached posts fetched from social media platforms.
+    Used to provide AI context for generating style-matched content.
+    Records are never deleted — they serve as content history.
+    """
+    __tablename__ = "social_post_history"
+
+    social_account_id = Column(String(36), ForeignKey("social_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    organisation_id = Column(String(36), ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False, index=True)
+    platform = Column(String(50), nullable=False, index=True)  # facebook, instagram, x, linkedin, youtube
+    external_post_id = Column(String(255), nullable=False, index=True)
+    body = Column(Text, nullable=True)  # post text content
+    media_urls = Column(JSON, nullable=True)  # list of media URLs
+    post_url = Column(String(500), nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    likes_count = Column(BigInteger, default=0, nullable=False)
+    shares_count = Column(BigInteger, default=0, nullable=False)
+    comments_count = Column(BigInteger, default=0, nullable=False)
+    views_count = Column(BigInteger, default=0, nullable=False)
+    hashtags = Column(JSON, nullable=True)  # extracted hashtags
+    raw_data = Column(JSON, nullable=True)  # original platform response
+    fetched_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    social_account = relationship("SocialAccount", back_populates="post_history")
+
+    __table_args__ = (
+        Index("ix_social_post_account_external", "social_account_id", "external_post_id", unique=True),
+    )

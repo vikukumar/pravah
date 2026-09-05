@@ -31,7 +31,7 @@ export default function AIStudioPage() {
   const toast = useToast();
   const { activeOrg } = useOrganisation();
 
-  const [activeTab, setActiveTab] = useState<"text" | "image">("text");
+  const [activeTab, setActiveTab] = useState<"text" | "image" | "auto">("auto");
 
   // Text Generator Form
   const [topic, setTopic] = useState("");
@@ -52,6 +52,82 @@ export default function AIStudioPage() {
   const [imageStyle, setImageStyle] = useState("photorealistic");
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<any>(null);
+
+  // Auto Generate & Post Form
+  const [autoTopic, setAutoTopic] = useState("");
+  const [autoKeywords, setAutoKeywords] = useState("");
+  const [autoVoice, setAutoVoice] = useState("professional");
+  const [autoCta, setAutoCta] = useState("");
+  const [autoPlatforms, setAutoPlatforms] = useState<string[]>(["instagram", "x"]);
+  const [autoGenImage, setAutoGenImage] = useState(true);
+  const [autoImageStyle, setAutoImageStyle] = useState("photorealistic");
+  const [autoAction, setAutoAction] = useState<"draft" | "schedule">("draft");
+  const [autoUseHistory, setAutoUseHistory] = useState(false);
+  const [autoGenerating, setAutoGenerating] = useState(false);
+  const [autoResult, setAutoResult] = useState<any>(null);
+
+  const ALL_PLATFORMS = [
+    { id: "instagram", label: "Instagram", emoji: "📸" },
+    { id: "x", label: "X / Twitter", emoji: "𝕏" },
+    { id: "facebook", label: "Facebook", emoji: "👍" },
+    { id: "linkedin", label: "LinkedIn", emoji: "💼" },
+    { id: "youtube", label: "YouTube", emoji: "▶️" },
+  ];
+
+  const VOICE_OPTIONS = [
+    { id: "professional", label: "Professional", desc: "Formal, authoritative" },
+    { id: "casual", label: "Casual", desc: "Friendly, conversational" },
+    { id: "viral", label: "Viral", desc: "Trending, engaging hooks" },
+    { id: "educational", label: "Educational", desc: "Informative, data-driven" },
+    { id: "inspirational", label: "Inspirational", desc: "Motivational, emotional" },
+  ];
+
+  const togglePlatform = (id: string) => {
+    setAutoPlatforms((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    );
+  };
+
+  const handleAutoGenerate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!autoTopic.trim()) {
+      toast.error("Please enter a topic or keyword.");
+      return;
+    }
+    if (autoPlatforms.length === 0) {
+      toast.error("Please select at least one platform.");
+      return;
+    }
+
+    setAutoGenerating(true);
+    setAutoResult(null);
+    try {
+      const kwList = autoKeywords ? autoKeywords.split(",").map((k) => k.trim()) : undefined;
+      const res = await fetchApi<any>("/ai/content/auto-content", {
+        method: "POST",
+        body: JSON.stringify({
+          topic: autoTopic,
+          platforms: autoPlatforms,
+          account_ids: [],
+          brand_voice: autoVoice,
+          keywords: kwList,
+          call_to_action: autoCta || undefined,
+          generate_image: autoGenImage,
+          image_style: autoImageStyle,
+          action: autoAction,
+          use_post_history: autoUseHistory,
+        }),
+      });
+      setAutoResult(res);
+      toast.success("Content Generated!", `${res.action === "draft" ? "Saved as draft" : "Scheduled"}: ${res.title}`);
+    } catch (err: any) {
+      toast.error("Auto-Generate Failed", err.message || "Could not generate content.");
+    } finally {
+      setAutoGenerating(false);
+    }
+  };
+
+  const handleViewContent = () => router.push("/dashboard/content");
 
   const handleGenerateText = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,6 +241,14 @@ export default function AIStudioPage() {
         {/* Tab switcher */}
         <div className="flex items-center p-1 bg-slate-900 border border-slate-800 rounded-xl">
           <button
+            onClick={() => setActiveTab("auto")}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              activeTab === "auto" ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5" /> Auto Generate & Post
+          </button>
+          <button
             onClick={() => setActiveTab("text")}
             className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               activeTab === "text" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"
@@ -182,6 +266,300 @@ export default function AIStudioPage() {
           </button>
         </div>
       </div>
+
+      {activeTab === "auto" && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Config Panel */}
+          <Card className="lg:col-span-5 space-y-5">
+            <div className="border-b border-slate-800 pb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-400" /> Auto Generate & Post
+              </h3>
+              <Badge variant="purple">SEO Optimized</Badge>
+            </div>
+
+            <form onSubmit={handleAutoGenerate} className="space-y-4">
+              {/* Topic */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-300">
+                  Topic / Keyword <span className="text-rose-400">*</span>
+                </label>
+                <textarea
+                  value={autoTopic}
+                  onChange={(e) => setAutoTopic(e.target.value)}
+                  placeholder="e.g. Diwali offer for our skincare brand, #skincare trending tips..."
+                  rows={3}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+                />
+              </div>
+
+              {/* Platform Selection */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-300">Target Platforms</label>
+                <div className="flex flex-wrap gap-2">
+                  {ALL_PLATFORMS.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => togglePlatform(p.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                        autoPlatforms.includes(p.id)
+                          ? "bg-indigo-500/20 border-indigo-500/60 text-indigo-200"
+                          : "bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-500"
+                      }`}
+                    >
+                      <span>{p.emoji}</span> {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Brand Voice */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-300">Brand Voice</label>
+                <div className="grid grid-cols-5 gap-1">
+                  {VOICE_OPTIONS.map((v) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => setAutoVoice(v.id)}
+                      title={v.desc}
+                      className={`py-1.5 rounded-lg text-[10px] font-semibold border transition-all ${
+                        autoVoice === v.id
+                          ? "bg-purple-500/20 border-purple-500/60 text-purple-200"
+                          : "bg-slate-800/50 border-slate-700 text-slate-500 hover:border-slate-500"
+                      }`}
+                    >
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* SEO Keywords */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-300">SEO Keywords (optional)</label>
+                <input
+                  value={autoKeywords}
+                  onChange={(e) => setAutoKeywords(e.target.value)}
+                  placeholder="skincare, natural, glow, Diwali (comma-separated)"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {/* CTA */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-300">Call to Action (optional)</label>
+                <input
+                  value={autoCta}
+                  onChange={(e) => setAutoCta(e.target.value)}
+                  placeholder="Shop now at our website, Book a free consultation..."
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {/* Image Toggle */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/50 border border-slate-800">
+                <div>
+                  <p className="text-xs font-medium text-slate-200">Generate Accompanying Image</p>
+                  <p className="text-[10px] text-slate-400">Auto-create AI visual using DALL-E / FLUX</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAutoGenImage((v) => !v)}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${
+                    autoGenImage ? "bg-indigo-600" : "bg-slate-700"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${autoGenImage ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+
+              {autoGenImage && (
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-medium text-slate-300">Image Style</label>
+                  <select
+                    value={autoImageStyle}
+                    onChange={(e) => setAutoImageStyle(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="photorealistic">Photorealistic</option>
+                    <option value="illustration">Illustration / Flat Art</option>
+                    <option value="3d render">3D Render</option>
+                    <option value="watercolor">Watercolor</option>
+                    <option value="minimalist">Minimalist Design</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Post History Context */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/50 border border-slate-800">
+                <div>
+                  <p className="text-xs font-medium text-slate-200">Use My Post History</p>
+                  <p className="text-[10px] text-slate-400">Sync style from your previous posts</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAutoUseHistory((v) => !v)}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${
+                    autoUseHistory ? "bg-indigo-600" : "bg-slate-700"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${autoUseHistory ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+
+              {/* Action */}
+              <div className="grid grid-cols-2 gap-2">
+                {(["draft", "schedule"] as const).map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    onClick={() => setAutoAction(a)}
+                    className={`py-2 rounded-xl text-xs font-semibold border transition-all capitalize ${
+                      autoAction === a
+                        ? "bg-indigo-500/20 border-indigo-500/60 text-indigo-200"
+                        : "bg-slate-800/50 border-slate-700 text-slate-400"
+                    }`}
+                  >
+                    {a === "draft" ? "💾 Save as Draft" : "⏰ Schedule"}
+                  </button>
+                ))}
+              </div>
+
+              <Button
+                type="submit"
+                variant="glow"
+                className="w-full"
+                disabled={autoGenerating}
+                leftIcon={autoGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+              >
+                {autoGenerating ? "Generating..." : "Generate & Create Content"}
+              </Button>
+            </form>
+          </Card>
+
+          {/* Result Panel */}
+          <div className="lg:col-span-7 space-y-4">
+            {autoGenerating && (
+              <Card className="p-8 flex flex-col items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                  <Zap className="w-8 h-8 text-indigo-400 animate-pulse" />
+                </div>
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-semibold text-slate-200">Generating SEO Content...</p>
+                  <p className="text-xs text-slate-400">AI is crafting platform-optimized posts{autoGenImage ? " and generating image" : ""}...</p>
+                </div>
+                <div className="flex gap-1">
+                  {[0, 0.2, 0.4].map((d) => (
+                    <div key={d} className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: `${d}s` }} />
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {autoResult && !autoGenerating && (
+              <>
+                {/* Success Banner */}
+                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-200">Content Created Successfully!</p>
+                      <p className="text-[11px] text-slate-400">
+                        {autoResult.action === "draft" ? "Saved as draft" : "Scheduled"} • Model: {autoResult.model} • {autoResult.tokens_used} tokens
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleViewContent} rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
+                    View Content
+                  </Button>
+                </div>
+
+                {/* Generated image */}
+                {autoResult.image_asset?.url && (
+                  <Card className="p-4 space-y-3">
+                    <h4 className="text-xs font-semibold text-slate-300">Generated Image</h4>
+                    <div className="rounded-xl overflow-hidden border border-slate-700">
+                      <Image
+                        src={autoResult.image_asset.url}
+                        alt={autoResult.title}
+                        width={640}
+                        height={640}
+                        className="w-full object-cover max-h-64"
+                      />
+                    </div>
+                  </Card>
+                )}
+
+                {/* Platform content breakdown */}
+                {autoResult.seo_data?.platforms && (
+                  <Card className="p-4 space-y-3">
+                    <h4 className="text-xs font-semibold text-slate-300">Platform-Specific Content</h4>
+                    <div className="space-y-3">
+                      {Object.entries(autoResult.seo_data.platforms).map(([platform, data]: [string, any]) => (
+                        <div key={platform} className="p-3 rounded-xl bg-slate-900/50 border border-slate-800 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-slate-300 uppercase">{platform}</span>
+                            <span className="text-[10px] text-slate-500">{data.character_count || data.body?.length || 0} chars</span>
+                          </div>
+                          <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{data.body}</p>
+                          {data.hashtags?.length > 0 && (
+                            <p className="text-[11px] text-indigo-400">
+                              #{data.hashtags.join(" #")}
+                            </p>
+                          )}
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(data.body); toast.info("Copied!"); }}
+                            className="text-[10px] text-slate-500 hover:text-slate-300 flex items-center gap-1 transition-colors"
+                          >
+                            <Copy className="w-3 h-3" /> Copy
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+
+                {/* SEO Meta */}
+                {autoResult.seo_data?.meta_description && (
+                  <Card className="p-4 space-y-2">
+                    <h4 className="text-xs font-semibold text-slate-300">SEO Meta</h4>
+                    <p className="text-xs font-bold text-slate-200">{autoResult.seo_data.title}</p>
+                    <p className="text-[11px] text-slate-400">{autoResult.seo_data.meta_description}</p>
+                    {autoResult.seo_data.suggested_posting_time && (
+                      <p className="text-[10px] text-indigo-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> Best time: {autoResult.seo_data.suggested_posting_time}
+                      </p>
+                    )}
+                  </Card>
+                )}
+              </>
+            )}
+
+            {!autoResult && !autoGenerating && (
+              <Card className="p-8 flex flex-col items-center gap-4 border-dashed">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 flex items-center justify-center">
+                  <Zap className="w-8 h-8 text-indigo-400/50" />
+                </div>
+                <div className="text-center space-y-2">
+                  <p className="text-sm font-semibold text-slate-300">Auto Generate & Post</p>
+                  <p className="text-xs text-slate-500 max-w-xs">
+                    Enter a topic, select platforms and voice, and let AI generate SEO-optimized content + image in one click.
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-3 w-full max-w-xs text-center">
+                  {["ChatGPT", "Gemini", "Claude", "Groq", "Llama", "Mistral"].map((m) => (
+                    <span key={m} className="text-[10px] text-slate-500 py-1 px-2 rounded-lg border border-slate-800">{m}</span>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </div>
+        </div>
+      )}
 
       {activeTab === "text" ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

@@ -260,15 +260,123 @@ async def list_social_accounts(
     ]
 
 
-@router.delete("/accounts/{account_id}")
+@router.post("/accounts/{account_id}/disconnect")
 async def disconnect_account(
     account_id: str,
     tenant: TenantContext = Depends(require_permission("social.disconnect")),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Soft-disconnect an account:
+    - Sets is_connected=False and health_status='disconnected'
+    - Invalidates tokens
+    - Account remains in DB and is still visible in history
+    - Account can be re-connected via OAuth
+    """
     social_svc = SocialService(db)
     await social_svc.disconnect_account(tenant.organisation.id, account_id, tenant.user)
-    return {"message": "Account disconnected successfully."}
+    return {"message": "Account disconnected. You can reconnect at any time."}
+
+
+@router.delete("/accounts/{account_id}")
+async def remove_account(
+    account_id: str,
+    reason: str = Query(default="User requested removal"),
+    tenant: TenantContext = Depends(require_permission("social.disconnect")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Soft-delete an account:
+    - Sets is_deleted=True — account is hidden from all UI lists
+    - Tokens are invalidated permanently
+    - All post history and audit data is PRESERVED in the database forever
+    - A new OAuth flow will create a fresh account record (if desired)
+    """
+    social_svc = SocialService(db)
+    await social_svc.soft_delete_account(tenant.organisation.id, account_id, tenant.user, reason=reason)
+    return {"message": "Account removed from your workspace. History is preserved in the backend."}
+
+
+@router.get("/accounts/history")
+async def get_account_history(
+    tenant: TenantContext = Depends(require_permission("social.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns ALL social accounts for this org including soft-deleted ones.
+    Shows 'Connection History' — useful for compliance and audit.
+    """
+    from app.schemas.social import SocialAccountResponse
+    social_svc = SocialService(db)
+    accounts = await social_svc.get_account_history(tenant.organisation.id)
+    return [
+        {
+            "id": a.id,
+            "provider": a.provider,
+            "account_name": a.account_name,
+            "username": a.username,
+            "profile_image_url": a.profile_image_url,
+            "is_connected": a.is_connected,
+            "is_deleted": a.is_deleted,
+            "health_status": a.health_status,
+            "disconnect_reason": a.disconnect_reason,
+            "deleted_at": a.deleted_at.isoformat() if a.deleted_at else None,
+            "last_sync_at": a.last_sync_at,
+            "created_at": a.created_at,
+        }
+        for a in accounts
+    ]
+
+
+@router.post("/accounts/{account_id}/sync-posts")
+async def sync_account_posts(
+    account_id: str,
+    force: bool = Query(default=False, description="Force re-fetch even if recently synced"),
+    tenant: TenantContext = Depends(require_permission("social.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Trigger a sync of the account's recent posts from the social platform.
+    Posts are cached in the DB and used for AI style-context matching.
+    Rate-limited to once per 6 hours per account (use force=true to override).
+    """
+    from app.services.social_posts_service import SocialPostsService
+    posts_svc = SocialPostsService(db)
+    result = await posts_svc.sync_posts(tenant.organisation.id, account_id, force=force)
+    return result
+
+
+@router.get("/accounts/{account_id}/posts")
+async def get_account_posts(
+    account_id: str,
+    limit: int = Query(default=25, ge=1, le=100),
+    tenant: TenantContext = Depends(require_permission("social.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns cached posts for a social account (previously synced from the platform).
+    Use /sync-posts to refresh the cache.
+    """
+    from app.services.social_posts_service import SocialPostsService
+    posts_svc = SocialPostsService(db)
+    posts = await posts_svc.get_cached_posts(tenant.organisation.id, account_id, limit=limit)
+    return [
+        {
+            "id": p.id,
+            "platform": p.platform,
+            "external_post_id": p.external_post_id,
+            "body": p.body,
+            "media_urls": p.media_urls,
+            "post_url": p.post_url,
+            "posted_at": p.posted_at.isoformat() if p.posted_at else None,
+            "likes_count": p.likes_count,
+            "shares_count": p.shares_count,
+            "comments_count": p.comments_count,
+            "hashtags": p.hashtags,
+            "fetched_at": p.fetched_at.isoformat() if p.fetched_at else None,
+        }
+        for p in posts
+    ]
 
 
 @router.get("/accounts/{account_id}/profile-summary", response_model=SocialProfileSummaryResponse)
@@ -299,3 +407,4 @@ async def get_profile_summary(
         engagement_patterns=summary.engagement_patterns,
         created_at=summary.created_at,
     )
+

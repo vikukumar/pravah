@@ -422,3 +422,217 @@ class AIService:
             "style": style,
             "model": provider.model,
         }
+
+    async def generate_seo_content(
+        self,
+        org: Organisation,
+        user: User,
+        topic: str,
+        platforms: List[str],
+        brand_voice: str = "professional",
+        keywords: Optional[List[str]] = None,
+        call_to_action: Optional[str] = None,
+        post_history_context: Optional[str] = None,
+        model_override: Optional[str] = None,
+        max_length_override: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate SEO-optimized, platform-specific social media content.
+        Returns structured JSON with body text, hashtags, alt-text, and meta-description per platform.
+        """
+        from app.services.provider_resolver import ProviderResolver
+        import json as json_lib
+
+        resolver = ProviderResolver(self.db)
+        provider = await resolver.resolve(
+            capability="text",
+            org_id=org.id,
+            model_override=model_override,
+        )
+
+        org_name = org.name
+        org_brand_voice = ""
+        org_tone = brand_voice
+        org_keywords = keywords or []
+
+        if org.brand_identity:
+            org_brand_voice = org.brand_identity.get("brand_voice", "")
+            org_tone = brand_voice or org.brand_identity.get("tone", "professional")
+            if not org_keywords:
+                org_keywords = org.brand_identity.get("keywords", [])
+
+        platform_limits = {
+            "x": 280, "twitter": 280,
+            "instagram": 2200, "facebook": 63206,
+            "linkedin": 3000, "youtube": 5000, "default": 1500,
+        }
+        platform_str = ", ".join([p.upper() for p in platforms])
+        platform_notes = [f"- {p.upper()}: max {platform_limits.get(p.lower(), platform_limits['default'])} characters" for p in platforms]
+
+        kw_str = ", ".join(org_keywords) if org_keywords else "N/A"
+        cta_str = f"\n- Incorporate this call-to-action: '{call_to_action}'" if call_to_action else ""
+        history_section = f"\n\n{post_history_context}" if post_history_context else ""
+
+        system_prompt = (
+            f"You are a world-class SEO social media copywriter for {org_name}.\n"
+            f"Brand Tone: {org_tone}\nBrand Guidelines: {org_brand_voice}\n"
+            f"Core SEO Keywords: {kw_str}\nTarget Platforms: {platform_str}\n\n"
+            f"Platform character limits:\n" + "\n".join(platform_notes) + history_section + "\n\n"
+            "OUTPUT FORMAT (respond as JSON only, no markdown wrapping):\n"
+            '{"title":"Catchy headline (<=80 chars)","meta_description":"SEO meta description (<=160 chars)",'
+            '"platforms":{"<platform_name>":{"body":"Full post text","hashtags":["tag1","tag2"],'
+            '"alt_text":"Image alt text (<=125 chars)","character_count":0}},'
+            '"image_prompt":"Detailed AI image generation prompt","suggested_posting_time":"Best time to post"}'
+        )
+
+        user_prompt = (
+            f"Create SEO-optimized social media content for:\n"
+            f"Topic/Keyword: {topic}\nBrand voice: {brand_voice}{cta_str}\n\n"
+            f"Generate content for these platforms: {platform_str}."
+        )
+
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            resp = await client.post(
+                f"{provider.base_uri.rstrip('/')}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {provider.api_key}",
+                    "HTTP-Referer": "https://pravah.app",
+                    "X-Title": "PRAVAH SEO Content AI",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": provider.model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.75,
+                    "max_tokens": max_length_override or 2500,
+                    "response_format": {"type": "json_object"},
+                },
+            )
+
+        if resp.status_code != 200:
+            raise PravahException(
+                detail=f"AI provider returned error {resp.status_code}: {resp.text[:300]}",
+                error_code="AI_SEO_ERROR"
+            )
+
+        data = resp.json()
+        raw_content = data["choices"][0]["message"]["content"]
+        tokens_used = data.get("usage", {}).get("total_tokens", 0)
+
+        try:
+            structured = json_lib.loads(raw_content)
+        except Exception:
+            structured = {
+                "title": topic,
+                "meta_description": "",
+                "platforms": {p: {"body": raw_content, "hashtags": [], "alt_text": "", "character_count": len(raw_content)} for p in platforms},
+                "image_prompt": f"Social media image for {topic}",
+                "suggested_posting_time": "Weekdays 7-9pm",
+            }
+
+        usage_record = AIUsage(
+            organisation_id=org.id,
+            user_id=user.id,
+            model=provider.model,
+            prompt_tokens=data.get("usage", {}).get("prompt_tokens", 0),
+            completion_tokens=data.get("usage", {}).get("completion_tokens", 0),
+            total_tokens=tokens_used,
+            cost_usd=tokens_used * 0.000003,
+        )
+        self.db.add(usage_record)
+        await self.db.commit()
+
+        return {
+            "content": structured,
+            "model": provider.model,
+            "tokens_used": tokens_used,
+            "topic": topic,
+            "platforms": platforms,
+        }
+
+    async def auto_generate_and_publish(
+        self,
+        org: Organisation,
+        user: User,
+        topic: str,
+        platforms: List[str],
+        account_ids: List[str],
+        brand_voice: str = "professional",
+        keywords: Optional[List[str]] = None,
+        call_to_action: Optional[str] = None,
+        generate_image: bool = True,
+        image_style: str = "photorealistic",
+        action: str = "draft",
+        scheduled_at: Optional[Any] = None,
+        approval_required: bool = False,
+        post_history_context: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        One-click pipeline: Generate SEO text → Generate image → Create Content record.
+        action: 'draft' | 'schedule' | 'publish'
+        """
+        import logging as _logging
+        _logger = _logging.getLogger("pravah.ai.auto_publish")
+        from app.services.content_service import ContentService
+
+        # Step 1: Generate SEO content
+        seo_result = await self.generate_seo_content(
+            org=org, user=user, topic=topic, platforms=platforms,
+            brand_voice=brand_voice, keywords=keywords, call_to_action=call_to_action,
+            post_history_context=post_history_context,
+        )
+        content_data = seo_result["content"]
+        title = content_data.get("title", topic)
+        image_prompt = content_data.get("image_prompt", f"Professional social media image for {topic}")
+
+        # Build body from first available platform
+        body = ""
+        for platform in platforms:
+            platform_content = content_data.get("platforms", {}).get(platform, {})
+            if platform_content.get("body"):
+                body = platform_content["body"]
+                break
+        if not body:
+            body = topic
+
+        # Step 2: Optionally generate image
+        media_urls: List[str] = []
+        image_asset = None
+        if generate_image:
+            try:
+                image_asset = await self.generate_creative_image(
+                    prompt=image_prompt, org=org, user=user, style=image_style, aspect_ratio="1:1",
+                )
+                if image_asset.get("url"):
+                    media_urls.append(image_asset["url"])
+            except Exception as e:
+                _logger.warning(f"Image generation failed in auto-publish pipeline: {e}")
+
+        # Step 3: Create content record
+        content_svc = ContentService(self.db)
+        content_item = await content_svc.create_content(
+            org_id=org.id, user=user, title=title, body=body,
+            content_type="image" if media_urls else "text",
+            platforms=platforms, account_ids=account_ids,
+            media_urls=media_urls,
+            scheduled_at=scheduled_at if action == "schedule" else None,
+            approval_required=approval_required,
+            ai_model=seo_result.get("model"), ai_prompt=topic,
+        )
+
+        return {
+            "content_id": content_item.id,
+            "title": title,
+            "body": body,
+            "platforms": platforms,
+            "media_urls": media_urls,
+            "seo_data": content_data,
+            "image_asset": image_asset,
+            "model": seo_result.get("model"),
+            "tokens_used": seo_result.get("tokens_used", 0),
+            "action": action,
+            "status": content_item.status,
+        }

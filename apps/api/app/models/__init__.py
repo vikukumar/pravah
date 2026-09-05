@@ -25,6 +25,7 @@ from app.models.social import (
     SocialToken,
     SocialProfile,
     SocialProfileSummary,
+    SocialPostHistory,
 )
 from app.models.content import (
     Campaign,
@@ -81,6 +82,11 @@ from app.models.system import (
     Job,
     JobExecution,
 )
+from app.models.calendar import (
+    CalendarSource,
+    CalendarEvent,
+    ContentSuggestion,
+)
 
 __all__ = [
     "Base",
@@ -106,6 +112,7 @@ __all__ = [
     "SocialToken",
     "SocialProfile",
     "SocialProfileSummary",
+    "SocialPostHistory",
     "Campaign",
     "Content",
     "ContentAsset",
@@ -149,4 +156,7 @@ __all__ = [
     "Webhook",
     "Job",
     "JobExecution",
+    "CalendarSource",
+    "CalendarEvent",
+    "ContentSuggestion",
 ]
