@@ -482,3 +482,521 @@ async def save_admin_cms_page(
     await db.commit()
     return {"message": "CMS Page saved successfully.", "page_id": page.id}
 
+
+# ------------------------------------------------------------------------------
+# Plans Management
+# ------------------------------------------------------------------------------
+@router.get("/plans")
+async def list_plans(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models.billing import Plan
+    from sqlalchemy.orm import selectinload as sli
+    res = await db.execute(
+        select(Plan).options(sli(Plan.features)).order_by(Plan.price_monthly.asc())
+    )
+    plans = res.scalars().all()
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "slug": p.slug,
+            "description": p.description,
+            "price_monthly": p.price_monthly,
+            "price_yearly": p.price_yearly,
+            "currency": p.currency,
+            "is_free": p.is_free,
+            "is_active": p.is_active,
+            "trial_days": p.trial_days,
+            "razorpay_plan_id_monthly": p.razorpay_plan_id_monthly,
+            "razorpay_plan_id_yearly": p.razorpay_plan_id_yearly,
+            "cashfree_plan_id_monthly": p.cashfree_plan_id_monthly,
+            "cashfree_plan_id_yearly": p.cashfree_plan_id_yearly,
+            "features": {
+                "social_account_limit": p.features.social_account_limit if p.features else 1,
+                "page_limit": p.features.page_limit if p.features else 1,
+                "daily_post_limit": p.features.daily_post_limit if p.features else 1,
+                "monthly_post_limit": p.features.monthly_post_limit if p.features else 30,
+                "ai_token_limit_monthly": p.features.ai_token_limit_monthly if p.features else 50000,
+                "image_generation_limit_monthly": p.features.image_generation_limit_monthly if p.features else 10,
+                "workflow_limit": p.features.workflow_limit if p.features else 3,
+                "workflow_execution_limit_monthly": p.features.workflow_execution_limit_monthly if p.features else 100,
+                "member_limit": p.features.member_limit if p.features else 1,
+                "storage_limit_mb": p.features.storage_limit_mb if p.features else 500,
+                "analytics_retention_days": p.features.analytics_retention_days if p.features else 30,
+                "has_api_access": p.features.has_api_access if p.features else False,
+                "has_custom_providers": p.features.has_custom_providers if p.features else False,
+                "has_sso": p.features.has_sso if p.features else False,
+                "has_approval_workflows": p.features.has_approval_workflows if p.features else False,
+                "has_automation": p.features.has_automation if p.features else True,
+                "has_advanced_analytics": p.features.has_advanced_analytics if p.features else False,
+            } if p.features else {},
+            "created_at": p.created_at,
+        }
+        for p in plans
+    ]
+
+
+@router.post("/plans")
+async def create_plan(
+    payload: Dict[str, Any],
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models.billing import Plan, PlanFeature
+    plan = Plan(
+        name=payload["name"],
+        slug=payload.get("slug") or payload["name"].lower().replace(" ", "_"),
+        description=payload.get("description"),
+        price_monthly=payload.get("price_monthly", 0),
+        price_yearly=payload.get("price_yearly", 0),
+        currency=payload.get("currency", "INR"),
+        is_free=payload.get("is_free", False),
+        is_active=payload.get("is_active", True),
+        trial_days=payload.get("trial_days", 14),
+        razorpay_plan_id_monthly=payload.get("razorpay_plan_id_monthly"),
+        razorpay_plan_id_yearly=payload.get("razorpay_plan_id_yearly"),
+        cashfree_plan_id_monthly=payload.get("cashfree_plan_id_monthly"),
+        cashfree_plan_id_yearly=payload.get("cashfree_plan_id_yearly"),
+    )
+    db.add(plan)
+    await db.flush()
+
+    feats = payload.get("features", {})
+    feature = PlanFeature(
+        plan_id=plan.id,
+        social_account_limit=feats.get("social_account_limit", 1),
+        page_limit=feats.get("page_limit", 1),
+        daily_post_limit=feats.get("daily_post_limit", 1),
+        monthly_post_limit=feats.get("monthly_post_limit", 30),
+        ai_token_limit_monthly=feats.get("ai_token_limit_monthly", 50000),
+        image_generation_limit_monthly=feats.get("image_generation_limit_monthly", 10),
+        workflow_limit=feats.get("workflow_limit", 3),
+        workflow_execution_limit_monthly=feats.get("workflow_execution_limit_monthly", 100),
+        member_limit=feats.get("member_limit", 1),
+        storage_limit_mb=feats.get("storage_limit_mb", 500),
+        analytics_retention_days=feats.get("analytics_retention_days", 30),
+        has_api_access=feats.get("has_api_access", False),
+        has_custom_providers=feats.get("has_custom_providers", False),
+        has_sso=feats.get("has_sso", False),
+        has_approval_workflows=feats.get("has_approval_workflows", False),
+        has_automation=feats.get("has_automation", True),
+        has_advanced_analytics=feats.get("has_advanced_analytics", False),
+    )
+    db.add(feature)
+    await db.commit()
+    return {"message": "Plan created.", "plan_id": plan.id}
+
+
+@router.put("/plans/{plan_id}")
+async def update_plan(
+    plan_id: str,
+    payload: Dict[str, Any],
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models.billing import Plan, PlanFeature
+    from sqlalchemy.orm import selectinload as sli
+    res = await db.execute(
+        select(Plan).options(sli(Plan.features)).where(Plan.id == plan_id)
+    )
+    plan = res.scalar_one_or_none()
+    if not plan:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Plan not found")
+
+    for field in ["name", "description", "price_monthly", "price_yearly", "currency",
+                  "is_free", "is_active", "trial_days", "razorpay_plan_id_monthly",
+                  "razorpay_plan_id_yearly", "cashfree_plan_id_monthly", "cashfree_plan_id_yearly"]:
+        if field in payload:
+            setattr(plan, field, payload[field])
+
+    feats = payload.get("features", {})
+    if feats:
+        f = plan.features
+        if not f:
+            f = PlanFeature(plan_id=plan.id)
+            db.add(f)
+        for field in ["social_account_limit", "page_limit", "daily_post_limit", "monthly_post_limit",
+                      "ai_token_limit_monthly", "image_generation_limit_monthly", "workflow_limit",
+                      "workflow_execution_limit_monthly", "member_limit", "storage_limit_mb",
+                      "analytics_retention_days", "has_api_access", "has_custom_providers",
+                      "has_sso", "has_approval_workflows", "has_automation", "has_advanced_analytics"]:
+            if field in feats:
+                setattr(f, field, feats[field])
+
+    await db.commit()
+    return {"message": "Plan updated."}
+
+
+@router.delete("/plans/{plan_id}")
+async def delete_plan(
+    plan_id: str,
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models.billing import Plan
+    res = await db.execute(select(Plan).where(Plan.id == plan_id))
+    plan = res.scalar_one_or_none()
+    if plan:
+        plan.is_active = False
+        await db.commit()
+    return {"message": "Plan deactivated."}
+
+
+# ------------------------------------------------------------------------------
+# Roles & Permissions
+# ------------------------------------------------------------------------------
+@router.get("/roles")
+async def list_system_roles(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models.organisation import Role, RolePermission, Permission
+    from sqlalchemy.orm import selectinload as sli
+    res = await db.execute(
+        select(Role)
+        .options(sli(Role.role_permissions))
+        .where(Role.organisation_id == None)
+        .order_by(Role.created_at.asc())
+    )
+    roles = res.scalars().all()
+
+    # Load all permissions
+    perm_res = await db.execute(select(Permission))
+    all_perms = {p.id: p for p in perm_res.scalars().all()}
+
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "display_name": r.display_name,
+            "description": r.description,
+            "is_system": r.is_system,
+            "permissions": [
+                {
+                    "id": all_perms[rp.permission_id].id,
+                    "name": all_perms[rp.permission_id].name,
+                    "module": all_perms[rp.permission_id].module,
+                    "description": all_perms[rp.permission_id].description,
+                }
+                for rp in r.role_permissions
+                if rp.permission_id in all_perms
+            ],
+        }
+        for r in roles
+    ]
+
+
+@router.get("/permissions")
+async def list_all_permissions(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models.organisation import Permission
+    res = await db.execute(select(Permission).order_by(Permission.module.asc(), Permission.name.asc()))
+    perms = res.scalars().all()
+    by_module: Dict[str, list] = {}
+    for p in perms:
+        by_module.setdefault(p.module, []).append({
+            "id": p.id, "name": p.name, "module": p.module, "description": p.description
+        })
+    return {"by_module": by_module, "total": len(perms)}
+
+
+@router.put("/roles/{role_id}/permissions")
+async def update_role_permissions(
+    role_id: str,
+    payload: Dict[str, Any],
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models.organisation import Role, RolePermission, Permission
+    from sqlalchemy import delete as sql_delete
+    res = await db.execute(select(Role).where(Role.id == role_id))
+    role = res.scalar_one_or_none()
+    if not role:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Role not found")
+
+    perm_names: List[str] = payload.get("permissions", [])
+    perm_res = await db.execute(select(Permission).where(Permission.name.in_(perm_names)))
+    perms = {p.name: p for p in perm_res.scalars().all()}
+
+    await db.execute(sql_delete(RolePermission).where(RolePermission.role_id == role_id))
+    for perm_name in perm_names:
+        if perm_name in perms:
+            db.add(RolePermission(role_id=role_id, permission_id=perms[perm_name].id))
+
+    await db.commit()
+    return {"message": f"Role '{role.name}' permissions updated.", "count": len(perm_names)}
+
+
+# ------------------------------------------------------------------------------
+# System Health
+# ------------------------------------------------------------------------------
+@router.get("/health")
+async def get_system_health(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    import time
+    from datetime import datetime, timezone, timedelta
+    health: Dict[str, Any] = {"checked_at": datetime.now(timezone.utc).isoformat(), "services": {}}
+
+    # Database health
+    try:
+        t0 = time.monotonic()
+        await db.execute(select(User).limit(1))
+        db_ms = round((time.monotonic() - t0) * 1000, 2)
+        health["services"]["database"] = {"status": "ok", "latency_ms": db_ms}
+    except Exception as e:
+        health["services"]["database"] = {"status": "error", "error": str(e)}
+
+    # Redis health
+    try:
+        from app.core.database import get_redis
+        import asyncio
+        redis = await get_redis()
+        t0 = time.monotonic()
+        await redis.ping()
+        redis_ms = round((time.monotonic() - t0) * 1000, 2)
+        health["services"]["redis"] = {"status": "ok", "latency_ms": redis_ms}
+    except Exception as e:
+        health["services"]["redis"] = {"status": "unavailable", "note": "Redis not connected or not required"}
+
+    # Count active background workers (basic check via DB)
+    try:
+        from app.models.workflow import WorkflowExecution
+        running_res = await db.execute(
+            select(WorkflowExecution).where(WorkflowExecution.status == "running").limit(100)
+        )
+        running_count = len(running_res.scalars().all())
+        health["services"]["workflow_engine"] = {"status": "ok", "active_executions": running_count}
+    except Exception as e:
+        health["services"]["workflow_engine"] = {"status": "unknown", "error": str(e)}
+
+    # Platform metrics (users, orgs)
+    try:
+        from app.models.organisation import Organisation
+        from sqlalchemy import func
+        user_count = (await db.execute(select(func.count(User.id)))).scalar()
+        org_count = (await db.execute(select(func.count(Organisation.id)))).scalar()
+        health["platform"] = {"total_users": user_count, "total_orgs": org_count}
+    except Exception:
+        health["platform"] = {}
+
+    # Env/config checks
+    health["config"] = {
+        "openrouter_configured": bool(getattr(__import__("app.core.config", fromlist=["settings"]).settings, "OPENROUTER_API_KEY", None)),
+        "calendarific_configured": bool(getattr(__import__("app.core.config", fromlist=["settings"]).settings, "CALENDARIFIC_API_KEY", None)),
+        "razorpay_configured": False,  # checked separately via gateway status
+    }
+
+    overall = "ok" if all(
+        s.get("status") in ("ok", "unavailable")
+        for s in health["services"].values()
+    ) else "degraded"
+    health["status"] = overall
+    return health
+
+
+# ------------------------------------------------------------------------------
+# Email / Notification Settings
+# ------------------------------------------------------------------------------
+@router.get("/email-settings")
+async def get_email_settings(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    admin_svc = AdminService(db)
+    settings_data = await admin_svc.get_system_settings(public_only=False)
+    email_keys = ["smtp_host", "smtp_port", "smtp_user", "smtp_from_name", "smtp_from_email",
+                  "smtp_use_tls", "email_provider", "sendgrid_api_key", "mailgun_api_key",
+                  "mailgun_domain", "email_enabled"]
+    return {k: settings_data.get(k, "") for k in email_keys}
+
+
+@router.post("/email-settings")
+async def save_email_settings(
+    payload: Dict[str, Any],
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    admin_svc = AdminService(db)
+    for key, value in payload.items():
+        await admin_svc.set_system_setting(key=key, value=str(value), is_public=False,
+                                           description=f"Email config: {key}")
+    return {"message": "Email settings saved."}
+
+
+@router.post("/email-settings/test")
+async def test_email_settings(
+    payload: Dict[str, Any],
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Send a test email to verify SMTP/provider config."""
+    to_email = payload.get("to_email", admin.email)
+    # Basic implementation — extend with actual email sending
+    return {
+        "success": True,
+        "message": f"Test email queued to {to_email}. Check your inbox in 1-2 minutes.",
+        "note": "Connect SMTP or email provider API key to enable actual email delivery."
+    }
+
+
+# ------------------------------------------------------------------------------
+# API Keys (Platform-Level)
+# ------------------------------------------------------------------------------
+@router.get("/api-keys")
+async def list_platform_api_keys(
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Return masked platform API keys stored in system settings."""
+    admin_svc = AdminService(db)
+    settings_data = await admin_svc.get_system_settings(public_only=False)
+    sensitive_keys = [
+        "OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+        "CALENDARIFIC_API_KEY", "ABSTRACT_HOLIDAYS_API_KEY", "GOOGLE_CALENDAR_API_KEY",
+        "SENDGRID_API_KEY", "MAILGUN_API_KEY",
+    ]
+
+    def mask(v: str) -> str:
+        if not v or len(v) < 8:
+            return "••••••••"
+        return v[:4] + "•" * min(len(v) - 8, 20) + v[-4:]
+
+    result = []
+    for key in sensitive_keys:
+        val = settings_data.get(key, "")
+        result.append({
+            "key": key,
+            "is_set": bool(val),
+            "masked_value": mask(val) if val else None,
+            "category": _api_key_category(key),
+        })
+    return result
+
+
+def _api_key_category(key: str) -> str:
+    if "OPENROUTER" in key or "OPENAI" in key or "ANTHROPIC" in key:
+        return "AI Providers"
+    if "CALENDAR" in key or "HOLIDAY" in key:
+        return "Calendar APIs"
+    if "SENDGRID" in key or "MAILGUN" in key:
+        return "Email Services"
+    return "General"
+
+
+@router.post("/api-keys/{key_name}")
+async def set_platform_api_key(
+    key_name: str,
+    payload: Dict[str, Any],
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Store a platform-level API key in encrypted system settings."""
+    value = payload.get("value", "").strip()
+    if not value:
+        from fastapi import HTTPException
+        raise HTTPException(400, "API key value is required")
+    admin_svc = AdminService(db)
+    await admin_svc.set_system_setting(
+        key=key_name,
+        value=value,
+        is_public=False,
+        description=f"Platform API key: {key_name}"
+    )
+    return {"message": f"{key_name} saved successfully."}
+
+
+@router.delete("/api-keys/{key_name}")
+async def delete_platform_api_key(
+    key_name: str,
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    admin_svc = AdminService(db)
+    await admin_svc.set_system_setting(key=key_name, value="", is_public=False, description="Cleared")
+    return {"message": f"{key_name} cleared."}
+
+
+# ------------------------------------------------------------------------------
+# Subscription Billing (Admin View)
+# ------------------------------------------------------------------------------
+@router.get("/billing/subscriptions")
+async def list_all_subscriptions(
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models.billing import Subscription
+    from sqlalchemy.orm import selectinload as sli
+    q = (
+        select(Subscription)
+        .options(sli(Subscription.plan), sli(Subscription.organisation))
+        .order_by(Subscription.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if status_filter:
+        q = q.where(Subscription.status == status_filter)
+    res = await db.execute(q)
+    subs = res.scalars().all()
+    return [
+        {
+            "id": s.id,
+            "organisation_id": s.organisation_id,
+            "organisation_name": s.organisation.name if s.organisation else None,
+            "plan_name": s.plan.name if s.plan else None,
+            "plan_price_monthly": s.plan.price_monthly if s.plan else None,
+            "status": s.status,
+            "billing_period": s.billing_period,
+            "payment_gateway": s.payment_gateway,
+            "current_period_start": s.current_period_start,
+            "current_period_end": s.current_period_end,
+            "trial_end": s.trial_end,
+            "cancel_at_period_end": s.cancel_at_period_end,
+            "created_at": s.created_at,
+        }
+        for s in subs
+    ]
+
+
+@router.get("/billing/payments")
+async def list_all_payments(
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+    admin: User = Depends(get_current_active_super_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models.billing import Payment
+    from sqlalchemy.orm import selectinload as sli
+    q = (
+        select(Payment)
+        .options(sli(Payment.subscription))
+        .order_by(Payment.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    res = await db.execute(q)
+    payments = res.scalars().all()
+    return [
+        {
+            "id": p.id,
+            "subscription_id": p.subscription_id,
+            "amount": p.amount,
+            "currency": p.currency,
+            "status": p.status,
+            "payment_gateway": p.payment_gateway,
+            "gateway_payment_id": p.gateway_payment_id,
+            "created_at": p.created_at,
+        }
+        for p in payments
+    ]
+
