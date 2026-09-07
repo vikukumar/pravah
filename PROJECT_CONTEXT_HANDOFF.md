@@ -197,7 +197,30 @@ asyncio.run(check())
 
 ---
 
-## 6. How to Continue in the Next Step
+## 6. PostgreSQL Database Configuration (Split Variables)
+
+The platform supports both 12-factor split environment variables and full URI strings:
+
+```env
+# Split PostgreSQL Configuration
+POSTGRES_HOST=postgres       # or IP/hostname (e.g. 172.21.0.1, cloud.vikshro.in, aws-rds)
+POSTGRES_PORT=5432           # default 5432
+POSTGRES_USER=pravah_user    # database username
+POSTGRES_PASSWORD=pravah_secure_prod_password # automatically URL-encoded for special characters
+POSTGRES_DB=pravah_prod_db   # database name
+POSTGRES_SSLMODE=disable     # disable, require, prefer, verify-ca, verify-full
+
+# DB_* alias prefix also supported
+# DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_SSLMODE
+```
+
+`apps/api/app/core/config.py` automatically validates and assembles:
+- Async URL: `postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}?ssl={sslmode}`
+- Sync URL: `postgresql://{user}:{password}@{host}:{port}/{db}?ssl={sslmode}`
+
+---
+
+## 7. How to Continue in the Next Step
 
 - When starting a new session or asking questions, you can reference this document:
   *"Refer to `PROJECT_CONTEXT_HANDOFF.md` for our current state."*

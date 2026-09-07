@@ -1,4 +1,5 @@
 from typing import List, Optional
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -27,9 +28,25 @@ class Settings(BaseSettings):
     OTP_EXPIRE_MINUTES: int = 10
     VERIFICATION_TOKEN_EXPIRE_HOURS: int = 24
     
-    # Database
-    DATABASE_URL: str = "sqlite+aiosqlite:///./pravah.db"
-    DATABASE_SYNC_URL: str = "sqlite:///./pravah.db"
+    # Database - Split Environment Variables (PostgreSQL & others)
+    POSTGRES_HOST: Optional[str] = None
+    POSTGRES_PORT: Optional[int] = None
+    POSTGRES_USER: Optional[str] = None
+    POSTGRES_PASSWORD: Optional[str] = None
+    POSTGRES_DB: Optional[str] = None
+    POSTGRES_SSLMODE: Optional[str] = None  # disable, require, prefer, verify-ca, verify-full
+
+    # Alternative DB_* alias prefix support
+    DB_HOST: Optional[str] = None
+    DB_PORT: Optional[int] = None
+    DB_USER: Optional[str] = None
+    DB_PASSWORD: Optional[str] = None
+    DB_NAME: Optional[str] = None
+    DB_SSLMODE: Optional[str] = None
+
+    # Full Connection URLs (auto-computed from split vars if provided, or explicit fallback)
+    DATABASE_URL: Optional[str] = None
+    DATABASE_SYNC_URL: Optional[str] = None
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -106,6 +123,44 @@ class Settings(BaseSettings):
     # Google Calendar OAuth (for users connecting personal Google Calendars)
     GOOGLE_CALENDAR_CLIENT_ID: Optional[str] = None
     GOOGLE_CALENDAR_CLIENT_SECRET: Optional[str] = None
+
+    @model_validator(mode="after")
+    def assemble_database_urls(self) -> "Settings":
+        host = self.POSTGRES_HOST or self.DB_HOST
+        user = self.POSTGRES_USER or self.DB_USER
+        password = self.POSTGRES_PASSWORD or self.DB_PASSWORD
+        db = self.POSTGRES_DB or self.DB_NAME
+        port = self.POSTGRES_PORT or self.DB_PORT or 5432
+        sslmode = self.POSTGRES_SSLMODE or self.DB_SSLMODE
+
+        # If split PostgreSQL vars are provided, assemble both async and sync URLs
+        if host and db:
+            import urllib.parse
+            auth_part = ""
+            if user:
+                encoded_user = urllib.parse.quote_plus(user)
+                if password:
+                    encoded_pass = urllib.parse.quote_plus(password)
+                    auth_part = f"{encoded_user}:{encoded_pass}@"
+                else:
+                    auth_part = f"{encoded_user}@"
+
+            query_param = ""
+            if sslmode and sslmode.lower() not in ("disable", "false", "off"):
+                query_param = f"?ssl={sslmode}"
+
+            self.DATABASE_URL = f"postgresql+asyncpg://{auth_part}{host}:{port}/{db}{query_param}"
+            self.DATABASE_SYNC_URL = f"postgresql://{auth_part}{host}:{port}/{db}{query_param}"
+        elif not self.DATABASE_URL:
+            self.DATABASE_URL = "sqlite+aiosqlite:///./pravah.db"
+            self.DATABASE_SYNC_URL = "sqlite:///./pravah.db"
+        elif self.DATABASE_URL and not self.DATABASE_SYNC_URL:
+            self.DATABASE_SYNC_URL = (
+                self.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+                .replace("sqlite+aiosqlite://", "sqlite://")
+            )
+
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

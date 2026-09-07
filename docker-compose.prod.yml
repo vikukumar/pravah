@@ -54,6 +54,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pravah_secure_prod_password}
       POSTGRES_DB: ${POSTGRES_DB:-pravah_prod_db}
       PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data/pgdata
     healthcheck:
@@ -125,8 +127,16 @@ services:
       - .env
     environment:
       - ENVIRONMENT=production
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
-      - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
+      # Split PostgreSQL Connection Variables (auto-assembled into async & sync URLs)
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-pravah_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-pravah_secure_prod_password}
+      - POSTGRES_DB=${POSTGRES_DB:-pravah_prod_db}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
+      # Full URLs (optional override if full connection string is specified in .env)
+      - DATABASE_URL=${DATABASE_URL:-}
+      - DATABASE_SYNC_URL=${DATABASE_SYNC_URL:-}
       - REDIS_URL=redis://redis:6379/0
       - STORAGE_TYPE=local
       - STORAGE_LOCAL_PATH=/app/uploads
@@ -180,8 +190,16 @@ services:
       - .env
     environment:
       - ENVIRONMENT=production
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
-      - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER:-pravah_user}:${POSTGRES_PASSWORD:-pravah_secure_prod_password}@postgres:5432/${POSTGRES_DB:-pravah_prod_db}
+      # Split PostgreSQL Connection Variables (auto-assembled into async & sync URLs)
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-pravah_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-pravah_secure_prod_password}
+      - POSTGRES_DB=${POSTGRES_DB:-pravah_prod_db}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
+      # Full URLs (optional override if full connection string is specified in .env)
+      - DATABASE_URL=${DATABASE_URL:-}
+      - DATABASE_SYNC_URL=${DATABASE_SYNC_URL:-}
       - REDIS_URL=redis://redis:6379/0
       - STORAGE_TYPE=local
       - STORAGE_LOCAL_PATH=/app/uploads
